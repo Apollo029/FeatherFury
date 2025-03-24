@@ -190,80 +190,81 @@ class FeatherFuryBot(discord.Client):
         # Placeholder for reinforcement logic (to be implemented in Phase 2)
         await interaction.followup.send(f"{user.mention}, reinforcement logic will be implemented in Phase 2.")
 
-    @app_commands.describe(name="The name of your race", color="The color of your race (e.g., red, #000000, 000000)")
-    async def enter_race(self, interaction: discord.Interaction, name: str, color: str):
-        await interaction.response.defer()
-        guild = interaction.guild
-        user = interaction.user
-        profile = self.global_player_profiles.get(user.id, {})
-        class_type = profile.get("class")
-        attributes = profile.get("attributes", [])
-        if user.id in self.global_player_profiles and self.global_player_profiles[user.id].get("race"):
-            await interaction.followup.send(f"{user.mention}, you have already entered a race! Ask an admin to reset it if needed.")
-            return
-        race_effects = generate_race_effects(name, color, class_type=class_type, attributes=attributes, is_bot=False)
-        self.global_player_profiles[user.id] = self.global_player_profiles.get(user.id, {
-            "class": class_type,
-            "attributes": attributes,
-            "race": name,
-            "stats": {
-                "wins": 0,
-                "losses": 0,
-                "total_battles": 0,
-                "total_damage_dealt": 0,
-                "total_damage_taken": 0,
-                "critical_hits": 0,
-                "critical_wins": 0,
-                "bots_beaten": 0,
-                "losses_to_bots": 0,
-                "monthly_trophies": 0,
-                "quarterly_trophies": 0
-            },
-            "level": profile.get("level", 1),
-            "xp": profile.get("xp", 0),
-            "teamwork_xp": profile.get("teamwork_xp", 0),
-            "class_mastery_xp": profile.get("class_mastery_xp", 0),
-            "class_mastery_title": profile.get("class_mastery_title", "Novice"),
-            "attribute_mastery_xp": profile.get("attribute_mastery_xp", {}),
-            "attribute_mastery_titles": profile.get("attribute_mastery_titles", {}),
-            "counterance_xp": profile.get("counterance_xp", {}),
-            "battle_tokens": profile.get("battle_tokens", {}),
-            "race_effects": race_effects,
-            "race_color": color
-        })
+@app_commands.describe(name="The name of your race", color="The color of your race (e.g., red, #000000, 000000)")
+async def enter_race(self, interaction: discord.Interaction, name: str, color: str):
+    await interaction.response.defer()
+    guild = interaction.guild
+    user = interaction.user
+    profile = self.global_player_profiles.get(user.id, {})
+    class_type = profile.get("class")
+    attributes = profile.get("attributes", [])
+    if user.id in self.global_player_profiles and self.global_player_profiles[user.id].get("race"):
+        await interaction.followup.send(f"{user.mention}, you have already entered a race! Ask an admin to reset it if needed.")
+        return
+    from data.class_types import generate_race_effects
+    race_effects = await generate_race_effects(name, color, class_type=class_type, attributes=attributes, is_bot=False)
+    self.global_player_profiles[user.id] = self.global_player_profiles.get(user.id, {
+        "class": class_type,
+        "attributes": attributes,
+        "race": name,
+        "stats": {
+            "wins": 0,
+            "losses": 0,
+            "total_battles": 0,
+            "total_damage_dealt": 0,
+            "total_damage_taken": 0,
+            "critical_hits": 0,
+            "critical_wins": 0,
+            "bots_beaten": 0,
+            "losses_to_bots": 0,
+            "monthly_trophies": 0,
+            "quarterly_trophies": 0
+        },
+        "level": profile.get("level", 1),
+        "xp": profile.get("xp", 0),
+        "teamwork_xp": profile.get("teamwork_xp", 0),
+        "class_mastery_xp": profile.get("class_mastery_xp", 0),
+        "class_mastery_title": profile.get("class_mastery_title", "Novice"),
+        "attribute_mastery_xp": profile.get("attribute_mastery_xp", {}),
+        "attribute_mastery_titles": profile.get("attribute_mastery_titles", {}),
+        "counterance_xp": profile.get("counterance_xp", {}),
+        "battle_tokens": profile.get("battle_tokens", {}),
+        "race_effects": race_effects,
+        "race_color": color
+    })
+    try:
+        hex_color = color
+        if not color.startswith("#"):
+            color_map = {
+                "red": "#FF0000",
+                "green": "#00FF00",
+                "blue": "#0000FF",
+                "white": "#FFFFFF",
+                "black": "#000000",
+                "yellow": "#FFFF00",
+                "purple": "#800080",
+                "orange": "#FFA500",
+                "pink": "#FFC0CB",
+                "cyan": "#00FFFF"
+            }
+            hex_color = color_map.get(color.lower(), "#FFFFFF")
+            if len(color) == 6 and all(c in '0123456789ABCDEFabcdef' for c in color):
+                hex_color = f"#{color}"
         try:
-            hex_color = color
-            if not color.startswith("#"):
-                color_map = {
-                    "red": "#FF0000",
-                    "green": "#00FF00",
-                    "blue": "#0000FF",
-                    "white": "#FFFFFF",
-                    "black": "#000000",
-                    "yellow": "#FFFF00",
-                    "purple": "#800080",
-                    "orange": "#FFA500",
-                    "pink": "#FFC0CB",
-                    "cyan": "#00FFFF"
-                }
-                hex_color = color_map.get(color.lower(), "#FFFFFF")
-                if len(color) == 6 and all(c in '0123456789ABCDEFabcdef' for c in color):
-                    hex_color = f"#{color}"
-            try:
-                discord.Color.from_str(hex_color)
-            except ValueError:
-                await interaction.followup.send(f"Invalid color format for '{color}'. Use a color name (e.g., red, blue) or a hex code (e.g., #FF0000 or 000000).")
-                return
-            role = await guild.create_role(name=name, color=discord.Color.from_str(hex_color))
-            await user.add_roles(role)
-            self.global_player_profiles[user.id]["race_color"] = hex_color
-            confirmation = await interaction.followup.send(f"Successfully completed /EnterRace for {user.display_name} with race {name} and effects {race_effects['effects']}")
-            await asyncio.sleep(10)
-            await confirmation.delete()
-            from core.events import update_stats_embed
-            await update_stats_embed(self, guild, user.id)
-        except discord.HTTPException as e:
-            await interaction.followup.send(f"Failed to create role for race {name}: {e}")
+            discord.Color.from_str(hex_color)
+        except ValueError:
+            await interaction.followup.send(f"Invalid color format for '{color}'. Use a color name (e.g., red, blue) or a hex code (e.g., #FF0000 or 000000).")
+            return
+        role = await guild.create_role(name=name, color=discord.Color.from_str(hex_color))
+        await user.add_roles(role)
+        self.global_player_profiles[user.id]["race_color"] = hex_color
+        confirmation = await interaction.followup.send(f"Successfully completed /EnterRace for {user.display_name} with race {name} and effects {race_effects['effects']}")
+        await asyncio.sleep(10)
+        await confirmation.delete()
+        from core.events import update_stats_embed
+        await update_stats_embed(self, guild, user.id)
+    except discord.HTTPException as e:
+        await interaction.followup.send(f"Failed to create role for race {name}: {e}")
 
     @app_commands.describe(user="The user to view stats for (default: yourself)")
     async def stats(self, interaction: discord.Interaction, user: discord.Member = None):

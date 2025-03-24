@@ -256,7 +256,8 @@ async def initialize_bot_profiles(bot):
                     "counterance_xp": {},
                     "battle_tokens": {str(guild.id): 3},
                     "race_effects": race_effects,
-                    "race_color": race_color
+                    "race_color": race_color,
+                    "is_bot": True  # Add flag to identify bots
                 }
                 # Assign class role
                 class_role = discord.utils.get(guild.roles, name=class_type)
@@ -328,7 +329,10 @@ async def initialize_bot_profiles(bot):
                         continue
 
                 print(f"Assigned {class_type} with attributes {attributes}, race {race} to bot {member.name}")
-                await update_stats_embed(bot, guild, member.id)
+                try:
+                    await update_stats_embed(bot, guild, member.id)
+                except Exception as e:
+                    print(f"Failed to update stats embed for bot {member.name}: {e}")
             # Add a delay between batches to prevent overloading the event loop
             await asyncio.sleep(1.0)
 
@@ -553,28 +557,42 @@ async def update_stats_embed(bot, guild, user_id, embed=None):
     if not channel:
         return
 
-    # Calculate leaderboard stats
-    all_profiles = [p for uid, p in bot.global_player_profiles.items() if guild.get_member(uid)]
+    # Calculate leaderboard stats (exclude bots)
+    all_profiles = [p for uid, p in bot.global_player_profiles.items() if guild.get_member(uid) and not p.get("is_bot", False)]
     if not all_profiles:
-        return
-    stats_to_compare = [
-        ("Wins (Players)", lambda p: p["stats"]["wins"]),
-        ("Wins (Bots)", lambda p: p["stats"]["bots_beaten"]),
-        ("Total Battles", lambda p: p["stats"]["total_battles"]),
-        ("Damage Dealt", lambda p: p["stats"]["total_damage_dealt"]),
-        ("Damage Taken", lambda p: p["stats"]["total_damage_taken"]),
-        ("Critical Hits", lambda p: p["stats"]["critical_hits"]),
-        ("Monthly Trophies", lambda p: p["stats"]["monthly_trophies"]),  # Fixed key
-        ("Quarterly Trophies", lambda p: p["stats"]["quarterly_trophies"]),  # Fixed key
-        ("XP", lambda p: p["xp"]),
-        ("Teamwork XP", lambda p: p["teamwork_xp"])
-    ]
-    highest_stats = {}
-    lowest_stats = {}
-    for stat_name, stat_func in stats_to_compare:
-        sorted_profiles = sorted(all_profiles, key=stat_func, reverse=True)
-        highest_stats[stat_name] = stat_func(sorted_profiles[0])
-        lowest_stats[stat_name] = stat_func(sorted_profiles[-1])
+        # If no player profiles, set default values to avoid errors
+        highest_stats = {stat_name: 0 for stat_name, _ in [
+            ("Wins (Players)", lambda p: p["stats"]["wins"]),
+            ("Wins (Bots)", lambda p: p["stats"]["bots_beaten"]),
+            ("Total Battles", lambda p: p["stats"]["total_battles"]),
+            ("Damage Dealt", lambda p: p["stats"]["total_damage_dealt"]),
+            ("Damage Taken", lambda p: p["stats"]["total_damage_taken"]),
+            ("Critical Hits", lambda p: p["stats"]["critical_hits"]),
+            ("Monthly Trophies", lambda p: p["stats"]["monthly_trophies"]),
+            ("Quarterly Trophies", lambda p: p["stats"]["quarterly_trophies"]),
+            ("XP", lambda p: p["xp"]),
+            ("Teamwork XP", lambda p: p["teamwork_xp"])
+        ]}
+        lowest_stats = highest_stats.copy()
+    else:
+        stats_to_compare = [
+            ("Wins (Players)", lambda p: p["stats"]["wins"]),
+            ("Wins (Bots)", lambda p: p["stats"]["bots_beaten"]),
+            ("Total Battles", lambda p: p["stats"]["total_battles"]),
+            ("Damage Dealt", lambda p: p["stats"]["total_damage_dealt"]),
+            ("Damage Taken", lambda p: p["stats"]["total_damage_taken"]),
+            ("Critical Hits", lambda p: p["stats"]["critical_hits"]),
+            ("Monthly Trophies", lambda p: p["stats"]["monthly_trophies"]),
+            ("Quarterly Trophies", lambda p: p["stats"]["quarterly_trophies"]),
+            ("XP", lambda p: p["xp"]),
+            ("Teamwork XP", lambda p: p["teamwork_xp"])
+        ]
+        highest_stats = {}
+        lowest_stats = {}
+        for stat_name, stat_func in stats_to_compare:
+            sorted_profiles = sorted(all_profiles, key=stat_func, reverse=True)
+            highest_stats[stat_name] = stat_func(sorted_profiles[0])
+            lowest_stats[stat_name] = stat_func(sorted_profiles[-1])
 
     # Create or update the embed
     if embed is None:
@@ -596,40 +614,48 @@ async def update_stats_embed(bot, guild, user_id, embed=None):
         embed.add_field(name="Race Effects", value=race_effects_display, inline=False)
         embed.add_field(name="Level", value=profile.get("level", 1), inline=True)
         wins = profile.get("stats", {}).get("wins", 0)
-        wins_display = f"{wins} {'👑' if wins == highest_stats['Wins (Players)'] else '😢' if wins == lowest_stats['Wins (Players)'] else ''}"
+        wins_display = f"{wins} {'👑' if wins == highest_stats['Wins (Players)'] and not profile.get('is_bot', False) else '😢' if wins == lowest_stats['Wins (Players)'] and not profile.get('is_bot', False) else ''}"
         bots_beaten = profile.get("stats", {}).get("bots_beaten", 0)
-        bots_beaten_display = f"{bots_beaten} {'👑' if bots_beaten == highest_stats['Wins (Bots)'] else '😢' if bots_beaten == lowest_stats['Wins (Bots)'] else ''}"
+        bots_beaten_display = f"{bots_beaten} {'👑' if bots_beaten == highest_stats['Wins (Bots)'] and not profile.get('is_bot', False) else '😢' if bots_beaten == lowest_stats['Wins (Bots)'] and not profile.get('is_bot', False) else ''}"
         embed.add_field(name="Wins (Players/Bots)", value=f"{wins_display}/{bots_beaten_display}", inline=True)
         total_battles = profile.get("stats", {}).get("total_battles", 0)
-        total_battles_display = f"{total_battles} {'👑' if total_battles == highest_stats['Total Battles'] else '😢' if total_battles == lowest_stats['Total Battles'] else ''}"
+        total_battles_display = f"{total_battles} {'👑' if total_battles == highest_stats['Total Battles'] and not profile.get('is_bot', False) else '😢' if total_battles == lowest_stats['Total Battles'] and not profile.get('is_bot', False) else ''}"
         embed.add_field(name="Total Battles", value=total_battles_display, inline=True)
         damage_dealt = profile.get("stats", {}).get("total_damage_dealt", 0)
-        damage_dealt_display = f"{damage_dealt} {'👑' if damage_dealt == highest_stats['Damage Dealt'] else '😢' if damage_dealt == lowest_stats['Damage Dealt'] else ''}"
+        damage_dealt_display = f"{damage_dealt} {'👑' if damage_dealt == highest_stats['Damage Dealt'] and not profile.get('is_bot', False) else '😢' if damage_dealt == lowest_stats['Damage Dealt'] and not profile.get('is_bot', False) else ''}"
         embed.add_field(name="Damage Dealt", value=damage_dealt_display, inline=True)
         damage_taken = profile.get("stats", {}).get("total_damage_taken", 0)
-        damage_taken_display = f"{damage_taken} {'👑' if damage_taken == highest_stats['Damage Taken'] else '😢' if damage_taken == lowest_stats['Damage Taken'] else ''}"
+        damage_taken_display = f"{damage_taken} {'👑' if damage_taken == highest_stats['Damage Taken'] and not profile.get('is_bot', False) else '😢' if damage_taken == lowest_stats['Damage Taken'] and not profile.get('is_bot', False) else ''}"
         embed.add_field(name="Damage Taken", value=damage_taken_display, inline=True)
         critical_hits = profile.get("stats", {}).get("critical_hits", 0)
-        critical_hits_display = f"{critical_hits} {'👑' if critical_hits == highest_stats['Critical Hits'] else '😢' if critical_hits == lowest_stats['Critical Hits'] else ''}"
+        critical_hits_display = f"{critical_hits} {'👑' if critical_hits == highest_stats['Critical Hits'] and not profile.get('is_bot', False) else '😢' if critical_hits == lowest_stats['Critical Hits'] and not profile.get('is_bot', False) else ''}"
         embed.add_field(name="Critical Hits", value=critical_hits_display, inline=True)
         monthly_trophies = profile.get("stats", {}).get("monthly_trophies", 0)
         quarterly_trophies = profile.get("stats", {}).get("quarterly_trophies", 0)
-        monthly_trophies_display = f"{monthly_trophies} {'👑' if monthly_trophies == highest_stats['Monthly Trophies'] else '😢' if monthly_trophies == lowest_stats['Monthly Trophies'] else ''}"
-        quarterly_trophies_display = f"{quarterly_trophies} {'👑' if quarterly_trophies == highest_stats['Quarterly Trophies'] else '😢' if quarterly_trophies == lowest_stats['Quarterly Trophies'] else ''}"
+        monthly_trophies_display = f"{monthly_trophies} {'👑' if monthly_trophies == highest_stats['Monthly Trophies'] and not profile.get('is_bot', False) else '😢' if monthly_trophies == lowest_stats['Monthly Trophies'] and not profile.get('is_bot', False) else ''}"
+        quarterly_trophies_display = f"{quarterly_trophies} {'👑' if quarterly_trophies == highest_stats['Quarterly Trophies'] and not profile.get('is_bot', False) else '😢' if quarterly_trophies == lowest_stats['Quarterly Trophies'] and not profile.get('is_bot', False) else ''}"
         embed.add_field(name="Trophies (Monthly/Quarterly)", value=f"{monthly_trophies_display}/{quarterly_trophies_display}", inline=True)
         battle_tokens = profile.get("battle_tokens", {}).get(str(guild.id), 3)
         embed.add_field(name="Battle Tokens", value=battle_tokens, inline=True)
         xp = profile.get("xp", 0)
-        xp_display = f"{xp} {'👑' if xp == highest_stats['XP'] else '😢' if xp == lowest_stats['XP'] else ''}"
+        xp_display = f"{xp} {'👑' if xp == highest_stats['XP'] and not profile.get('is_bot', False) else '😢' if xp == lowest_stats['XP'] and not profile.get('is_bot', False) else ''}"
         embed.add_field(name="XP", value=xp_display, inline=True)
         teamwork_xp = profile.get("teamwork_xp", 0)
-        teamwork_xp_display = f"{teamwork_xp} {'👑' if teamwork_xp == highest_stats['Teamwork XP'] else '😢' if teamwork_xp == lowest_stats['Teamwork XP'] else ''}"
+        teamwork_xp_display = f"{teamwork_xp} {'👑' if teamwork_xp == highest_stats['Teamwork XP'] and not profile.get('is_bot', False) else '😢' if teamwork_xp == lowest_stats['Teamwork XP'] and not profile.get('is_bot', False) else ''}"
         embed.add_field(name="Teamwork XP", value=teamwork_xp_display, inline=True)
         class_mastery = f"{profile.get('class_mastery_title', 'Novice')} ({profile.get('class_mastery_xp', 0)} XP)"
         embed.add_field(name=f"{profile.get('class', 'None')} Mastery", value=class_mastery, inline=True)
-        for attr in profile.get("attributes", []):
-            attr_mastery = f"{profile.get('attribute_mastery_titles', {}).get(attr, 'Novice')} ({profile.get('attribute_mastery_xp', {}).get(attr, 0)} XP)"
-            embed.add_field(name=f"{attr} Mastery", value=attr_mastery, inline=True)
+        # Consolidate attribute mastery fields for bots with many attributes
+        if profile.get("is_bot", False) and len(profile.get("attributes", [])) > 5:
+            attr_mastery_display = "\n".join([
+                f"{attr}: {profile.get('attribute_mastery_titles', {}).get(attr, 'Novice')} ({profile.get('attribute_mastery_xp', {}).get(attr, 0)} XP)"
+                for attr in profile.get("attributes", [])
+            ])
+            embed.add_field(name="Attribute Mastery", value=attr_mastery_display or "None", inline=False)
+        else:
+            for attr in profile.get("attributes", []):
+                attr_mastery = f"{profile.get('attribute_mastery_titles', {}).get(attr, 'Novice')} ({profile.get('attribute_mastery_xp', {}).get(attr, 0)} XP)"
+                embed.add_field(name=f"{attr} Mastery", value=attr_mastery, inline=True)
 
     if user_id in bot.stats_message_ids.get(guild.id, {}):
         try:

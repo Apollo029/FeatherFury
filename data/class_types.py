@@ -77,7 +77,7 @@ class Player:
                 base_speed += value
         return base_speed + (self.level - 1) * 1
 
-def generate_race_effects(race_name: str, color: str, class_type: str = None, attributes: List[str] = None, is_bot: bool = False) -> Dict:
+async def generate_race_effects(race_name: str, color: str, class_type: str = None, attributes: List[str] = None, is_bot: bool = False) -> Dict:
     """Generate race effects based on attributes with balanced dynamic generation."""
     effects = []
     power_index = 0
@@ -88,38 +88,32 @@ def generate_race_effects(race_name: str, color: str, class_type: str = None, at
     # Precompute possible weaknesses for each element
     element_weaknesses = {element: [e for e in elements if e != element] for element in elements}
 
+    # Precompute choices to reduce random calls
+    effect_types = ["buff", "debuff", "dual"]
+    if is_bot:
+        effect_types = ["buff", "buff", "debuff"]  # More likely to get buffs
+
     # Fill up to 4 effects with dynamic effects
     while len(effects) < 4:
-        if is_bot:
-            # Bots get less random, more balanced effects
-            effect_type = random.choice(["buff", "buff", "debuff"])  # More likely to get buffs
-            if effect_type == "buff":
-                stat = random.choice(stat_types)
-                value = random.randint(5, 10)  # Smaller range for bots
-                effect = {"name": f"{race_name} Boost", "value": f"+{value} {stat}", "type": "normal"}
-            else:  # debuff
-                stat = random.choice(stat_types)
-                value = random.randint(3, 5)  # Smaller debuffs for bots
-                effect = {"name": f"{race_name} Weakness", "value": f"-{value} {stat}", "type": "normal"}
-        else:
-            # Players get more randomized effects
-            effect_type = random.choice(["buff", "debuff", "dual"])
-            if effect_type == "buff":
-                stat = random.choice(stat_types)
-                value = random.randint(5, 15)
-                effect = {"name": f"{race_name} Boost", "value": f"+{value} {stat}", "type": "normal"}
-            elif effect_type == "debuff":
-                stat = random.choice(stat_types)
-                value = random.randint(5, 10)
-                effect = {"name": f"{race_name} Weakness", "value": f"-{value} {stat}", "type": "normal"}
-            else:  # dual
-                element = random.choice(elements)
-                value = random.randint(20, 35)
-                weakness = random.choice(element_weaknesses[element])
-                effect = {"name": f"{race_name} Power", "value": f"+{value}% {element} Damage", "type": "dual", "weakness": weakness, "strength": element}
+        effect_type = random.choice(effect_types)
+        if effect_type == "buff":
+            stat = random.choice(stat_types)
+            value = random.randint(5, 10) if is_bot else random.randint(5, 15)
+            effect = {"name": f"{race_name} Boost", "value": f"+{value} {stat}", "type": "normal"}
+        elif effect_type == "debuff":
+            stat = random.choice(stat_types)
+            value = random.randint(3, 5) if is_bot else random.randint(5, 10)
+            effect = {"name": f"{race_name} Weakness", "value": f"-{value} {stat}", "type": "normal"}
+        else:  # dual
+            element = random.choice(elements)
+            value = random.randint(20, 35)
+            weakness = random.choice(element_weaknesses[element])
+            effect = {"name": f"{race_name} Power", "value": f"+{value}% {element} Damage", "type": "dual", "weakness": weakness, "strength": element}
         if effect["name"] not in [e["name"] for e in effects]:
             effects.append(effect)
             power_index += 5 if effect["type"] == "normal" else 10
+        # Add a small delay to prevent blocking
+        await asyncio.sleep(0.1)
 
     power_index = min(power_index, 50)  # Cap power index at 50%
     print(f"Generated race effects for {race_name} with color {color} (class: {class_type}, attrs: {attributes}, is_bot: {is_bot}): {effects}, power_index: {power_index}")
