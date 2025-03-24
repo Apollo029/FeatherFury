@@ -1,7 +1,7 @@
 # core/events.py
 import discord
 import random
-from datetime import datetime
+from datetime import datetime, timedelta  # Add this import
 import pytz
 import asyncio
 import json
@@ -36,8 +36,18 @@ async def on_ready(bot):
                     continue
             print(f"Reusing existing channel: {channel.name} (ID: {channel.id})")
 
-        # Restore profiles from stats embeds
+        # Clear the stats channel (temporary for this test)
         stats_channel = discord.utils.get(guild.text_channels, name=CHANNEL_CONFIGS["stats_channel"].lstrip('#'))
+        if stats_channel:
+            try:
+                async for message in stats_channel.history(limit=100):
+                    if message.author == bot.user:
+                        await message.delete()
+                        print(f"Deleted old stats message in {guild.name}")
+            except discord.Forbidden:
+                print(f"Missing permissions to delete messages in {stats_channel.name}")
+
+        # Restore profiles from stats embeds (this will now be empty after clearing)
         if stats_channel:
             try:
                 async for message in stats_channel.history(limit=100):
@@ -554,8 +564,8 @@ async def update_stats_embed(bot, guild, user_id, embed=None):
         ("Damage Dealt", lambda p: p["stats"]["total_damage_dealt"]),
         ("Damage Taken", lambda p: p["stats"]["total_damage_taken"]),
         ("Critical Hits", lambda p: p["stats"]["critical_hits"]),
-        ("Trophies (Monthly)", lambda p: p["stats"]["monthly_trophies"]),
-        ("Trophies (Quarterly)", lambda p: p["stats"]["quarterly_trophies"]),
+        ("Monthly Trophies", lambda p: p["stats"]["monthly_trophies"]),  # Fixed key
+        ("Quarterly Trophies", lambda p: p["stats"]["quarterly_trophies"]),  # Fixed key
         ("XP", lambda p: p["xp"]),
         ("Teamwork XP", lambda p: p["teamwork_xp"])
     ]
@@ -563,8 +573,8 @@ async def update_stats_embed(bot, guild, user_id, embed=None):
     lowest_stats = {}
     for stat_name, stat_func in stats_to_compare:
         sorted_profiles = sorted(all_profiles, key=stat_func, reverse=True)
-        highest_stats[stat_name] = sorted_profiles[0]["stats"][stat_name.split()[0].lower()] if stat_name.startswith("Wins") else sorted_profiles[0]["stats"][stat_name.split()[0].lower() + "_" + stat_name.split()[1].lower()] if stat_name.startswith("Trophies") else stat_func(sorted_profiles[0])
-        lowest_stats[stat_name] = sorted_profiles[-1]["stats"][stat_name.split()[0].lower()] if stat_name.startswith("Wins") else sorted_profiles[-1]["stats"][stat_name.split()[0].lower() + "_" + stat_name.split()[1].lower()] if stat_name.startswith("Trophies") else stat_func(sorted_profiles[-1])
+        highest_stats[stat_name] = stat_func(sorted_profiles[0])
+        lowest_stats[stat_name] = stat_func(sorted_profiles[-1])
 
     # Create or update the embed
     if embed is None:
@@ -604,8 +614,8 @@ async def update_stats_embed(bot, guild, user_id, embed=None):
         embed.add_field(name="Critical Hits", value=critical_hits_display, inline=True)
         monthly_trophies = profile.get("stats", {}).get("monthly_trophies", 0)
         quarterly_trophies = profile.get("stats", {}).get("quarterly_trophies", 0)
-        monthly_trophies_display = f"{monthly_trophies} {'👑' if monthly_trophies == highest_stats['Trophies (Monthly)'] else '😢' if monthly_trophies == lowest_stats['Trophies (Monthly)'] else ''}"
-        quarterly_trophies_display = f"{quarterly_trophies} {'👑' if quarterly_trophies == highest_stats['Trophies (Quarterly)'] else '😢' if quarterly_trophies == lowest_stats['Trophies (Quarterly)'] else ''}"
+        monthly_trophies_display = f"{monthly_trophies} {'👑' if monthly_trophies == highest_stats['Monthly Trophies'] else '😢' if monthly_trophies == lowest_stats['Monthly Trophies'] else ''}"
+        quarterly_trophies_display = f"{quarterly_trophies} {'👑' if quarterly_trophies == highest_stats['Quarterly Trophies'] else '😢' if quarterly_trophies == lowest_stats['Quarterly Trophies'] else ''}"
         embed.add_field(name="Trophies (Monthly/Quarterly)", value=f"{monthly_trophies_display}/{quarterly_trophies_display}", inline=True)
         battle_tokens = profile.get("battle_tokens", {}).get(str(guild.id), 3)
         embed.add_field(name="Battle Tokens", value=battle_tokens, inline=True)
