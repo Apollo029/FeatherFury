@@ -1,106 +1,149 @@
 # battle/state.py
-from typing import Dict, Any, List
-from data.class_types import Player
 import random
 from data.classes import CLASS_ATTACKS
-from data.attributes import ATTRIBUTE_ATTACKS
-
-# Define attack pools for classes, attributes, and neutral options
-CLASS_ATTACKS_POOL = {
-    "Winged Creature": [
-        {"name": "Aerial Slash", "damage_range": (15, 25), "effect": "A swift air-based strike"},
-        {"name": "Wind Gust", "damage_range": (10, 20), "effect": "A gust that disrupts the enemy"},
-        {"name": "Feather Storm", "damage_range": (12, 22), "effect": "A flurry of feather attacks"}
-    ],
-    "Aquatic Creature": [
-        {"name": "Water Jet", "damage_range": (15, 25), "effect": "A powerful water blast"},
-        {"name": "Tidal Wave", "damage_range": (10, 20), "effect": "A sweeping water attack"},
-        {"name": "Bubble Barrage", "damage_range": (12, 22), "effect": "A barrage of water bubbles"}
-    ],
-    "Ground Creature": [
-        {"name": "Earth Smash", "damage_range": (15, 25), "effect": "A crushing earth strike"},
-        {"name": "Rock Throw", "damage_range": (10, 20), "effect": "A hurled rock attack"},
-        {"name": "Quake Stomp", "damage_range": (12, 22), "effect": "A ground-shaking stomp"}
-    ]
-}
-
-ATTRIBUTE_ATTACKS_POOL = {
-    "Fire": [
-        {"name": "Fireball", "damage_range": (15, 25), "effect": "A blazing fireball"},
-        {"name": "Flame Burst", "damage_range": (10, 20), "effect": "A burst of flames"},
-        {"name": "Inferno Strike", "damage_range": (12, 22), "effect": "A fiery slash"}
-    ],
-    "Water": [
-        {"name": "Aqua Shot", "damage_range": (15, 25), "effect": "A precise water shot"},
-        {"name": "Wave Crash", "damage_range": (10, 20), "effect": "A crashing wave"},
-        {"name": "Hydro Blast", "damage_range": (12, 22), "effect": "A high-pressure blast"}
-    ],
-    "Air": [
-        {"name": "Wind Slash", "damage_range": (15, 25), "effect": "A cutting wind blade"},
-        {"name": "Gale Force", "damage_range": (10, 20), "effect": "A forceful gust"},
-        {"name": "Air Vortex", "damage_range": (12, 22), "effect": "A spinning air attack"}
-    ],
-    "Life": [
-        {"name": "Healing Pulse", "damage_range": (15, 25), "effect": "A life-infused strike"},
-        {"name": "Vital Strike", "damage_range": (10, 20), "effect": "A vitality boost attack"},
-        {"name": "Regen Slash", "damage_range": (12, 22), "effect": "A regenerating cut"}
-    ]
-}
+from data.attributes import ATTRIBUTE_ATTACKS, ATTRIBUTE_INTERACTION_ATTACKS, PRIMARY_ATTRIBUTES, attribute_emojis
+from data.constants import XP_PER_BATTLE_WIN, XP_PER_BATTLE_LOSS, MASTERY_XP_PER_ATTACK, COUNTERANCE_XP_PER_ATTACK_RECEIVED, COUNTERANCE_XP_PER_COMBO
 
 NEUTRAL_ATTACKS = [
-    {"name": "Basic Strike", "damage_range": (10, 20), "effect": "A standard neutral attack"},
-    {"name": "Power Jab", "damage_range": (8, 18), "effect": "A simple punch"},
-    {"name": "Quick Thrust", "damage_range": (9, 19), "effect": "A fast stab"}
+    {"name": "Basic Strike", "damage_range": (10, 15), "effect": "A standard attack"},
+    {"name": "Quick Jab", "damage_range": (8, 12), "effect": "A fast, light hit"},
+    {"name": "Heavy Hit", "damage_range": (12, 18), "effect": "A slow but powerful strike"}
 ]
 
 DEFENSE_OPTIONS = [
-    {"name": "Shield Bash", "effect": "Absorbs damage and counters"},
-    {"name": "Dodge Roll", "effect": "Evasive maneuver"},
-    {"name": "Guard Stance", "effect": "Strengthens defense"}
+    {"name": "Block", "effect": "Reduces damage by 50%", "damage_reduction": 0.5},
+    {"name": "Dodge", "effect": "50% chance to avoid damage", "dodge_chance": 0.5},
+    {"name": "Counter", "effect": "30% chance to reflect 50% damage", "counter_chance": 0.3, "reflect_percentage": 0.5}
 ]
 
-def initialize_battle_state(player1: Player, player2: Player, thread: Any, battlefield: str) -> Dict[str, Any]:
-    """Initialize the battle state with two players, a thread, and a battlefield modifier."""
-    battle_state = {
+COMBO_ATTACKS = {
+    ("Fire", "Earth"): {"name": "Lava Eruption", "damage_range": (30, 40), "effect": "A powerful lava attack", "accuracy": 0.9, "self_damage_risk": 0.1},
+    ("Fire", "Water"): {"name": "Steam Burst", "damage_range": (20, 30), "effect": "A burst of scalding steam", "accuracy": 0.7, "self_damage_risk": 0.2},
+    ("Water", "Ice"): {"name": "Frozen Tide", "damage_range": (25, 35), "effect": "A freezing tidal wave", "accuracy": 0.85, "self_damage_risk": 0.15},
+    ("Electric", "Air"): {"name": "Thunderstorm", "damage_range": (25, 35), "effect": "A storm of lightning and wind", "accuracy": 0.85, "self_damage_risk": 0.15},
+    ("Earth", "Nature"): {"name": "Forest Quake", "damage_range": (25, 35), "effect": "A quaking forest attack", "accuracy": 0.85, "self_damage_risk": 0.15},
+    ("Light", "Life"): {"name": "Holy Restoration", "damage_range": (20, 30), "effect": "A restorative light attack", "accuracy": 0.8, "self_damage_risk": 0.1},
+    ("Shadow", "Death"): {"name": "Necrotic Abyss", "damage_range": (25, 35), "effect": "A dark necrotic strike", "accuracy": 0.85, "self_damage_risk": 0.15}
+}
+
+def initialize_battle_state(player1, player2, thread, battlefield, is_bot_fight=False):
+    return {
         "player1": player1,
         "player2": player2,
         "thread": thread,
         "battlefield": battlefield,
         "turn": player1.user,
         "message": None,
-        "reinforce_buff": {},
         "active": True,
+        "reinforcements": [],
+        "is_bot_fight": is_bot_fight,
         "last_action": None
     }
-    return battle_state
 
-def process_attack(attacker: Player, defender: Player, attack_type: str, reinforce_buff: Dict, attack_pool: List = None) -> int:
-    """Process an attack and return the damage dealt, using a specific attack pool if provided."""
-    if attack_pool and attack_type in [a["name"] for a in attack_pool]:
-        attack = next(a for a in attack_pool if a["name"] == attack_type)
-        base_damage = random.randint(attack["damage_range"][0], attack["damage_range"][1])
-    else:
-        base_damage = random.randint(10, 20) if attack_type == "⚔️" else random.randint(15, 25)
-    # Apply reinforce buff if present
-    if attacker.user.id in reinforce_buff:
-        base_damage *= reinforce_buff[attacker.user.id].get("attack_boost", 1.0)
-    # Apply defense reduction
-    effective_damage = max(0, base_damage - defender.defense)
-    defender.take_damage(effective_damage, 0.1)  # 10% dodge chance
-    return effective_damage
-
-def get_random_attacks(player: Player) -> List[Dict]:
-    """Generate a list of random attacks based on player's class and attributes."""
+def get_random_attacks(player):
     attacks = []
-    # Add class-specific attack
-    if player.class_type in CLASS_ATTACKS_POOL:
-        attacks.append(random.choice(CLASS_ATTACKS_POOL[player.class_type]))
-    # Add attribute-specific attacks (up to 3)
+    # Class attack
+    class_attacks = CLASS_ATTACKS.get(player.class_type, [])
+    if class_attacks:
+        attacks.append(random.choice(class_attacks))
+    # Attribute attacks
     for attr in player.attributes:
-        if attr in ATTRIBUTE_ATTACKS_POOL and len(attacks) < 3:
-            attacks.append(random.choice(ATTRIBUTE_ATTACKS_POOL[attr]))
-    # Add neutral attack
+        attr_attacks = ATTRIBUTE_ATTACKS.get(attr, [])
+        if attr_attacks:
+            attacks.append(random.choice(attr_attacks))
+    # Basic attack
     attacks.append(random.choice(NEUTRAL_ATTACKS))
-    # Add defense option
+    # Defense option
     attacks.append(random.choice(DEFENSE_OPTIONS))
-    return attacks[:4]  # Limit to 4 options
+    return attacks
+
+def process_attack(attacker, defender, attack_name, reinforce_buff, attacks, battlefield):
+    attack = next((a for a in attacks if a["name"] == attack_name), None)
+    if not attack:
+        return 0
+    damage = 0
+    if "damage_range" in attack:
+        damage = random.randint(attack["damage_range"][0], attack["damage_range"][1])
+        # Apply battlefield modifiers
+        from data.battlefields import BATTLEFIELD_MODIFIERS
+        battlefield_modifiers = BATTLEFIELD_MODIFIERS.get(battlefield, {})
+        for attr, modifier in battlefield_modifiers.items():
+            if attr in attack_name.lower() and modifier["type"] == "boost":
+                damage *= modifier["value"]
+            elif attr in attack_name.lower() and modifier["type"] == "nerf":
+                damage *= modifier["value"]
+        # Apply counterance XP reduction
+        counterance_key = f"attr_{next((attr for attr in PRIMARY_ATTRIBUTES if attr.lower() in attack_name.lower()), None)}"
+        if counterance_key:
+            counterance_xp = defender.global_player_profiles[defender.user.id]["counterance_xp"].get(counterance_key, 0)
+            reduction = min(counterance_xp / 1000, 0.5)  # Max 50% reduction
+            damage *= (1 - reduction)
+        # Apply critical hit
+        if random.random() < 0.1:  # 10% chance
+            damage *= 1.5
+            attacker.stats["critical_hits"] += 1
+            attacker.global_player_profiles[attacker.user.id]["stats"]["critical_hits"] += 1
+    defender.hp -= damage
+    attacker.stats["total_damage_dealt"] += damage
+    attacker.global_player_profiles[attacker.user.id]["stats"]["total_damage_dealt"] += damage
+    defender.stats["total_damage_taken"] += damage
+    defender.global_player_profiles[defender.user.id]["stats"]["total_damage_taken"] += damage
+    # Update counterance XP
+    counterance_key = f"attr_{next((attr for attr in PRIMARY_ATTRIBUTES if attr.lower() in attack_name.lower()), None)}"
+    if counterance_key:
+        defender.global_player_profiles[defender.user.id]["counterance_xp"][counterance_key] = defender.global_player_profiles[defender.user.id]["counterance_xp"].get(counterance_key, 0) + COUNTERANCE_XP_PER_ATTACK_RECEIVED
+    # Update mastery XP
+    mastery_key = f"attr_{next((attr for attr in PRIMARY_ATTRIBUTES if attr.lower() in attack_name.lower()), None)}"
+    if mastery_key:
+        attacker.global_player_profiles[attacker.user.id]["attribute_mastery_xp"][mastery_key.split("_")[1]] = attacker.global_player_profiles[attacker.user.id]["attribute_mastery_xp"].get(mastery_key.split("_")[1], 0) + MASTERY_XP_PER_ATTACK
+    if attack_name in [a["name"] for a in CLASS_ATTACKS.get(attacker.class_type, [])]:
+        attacker.global_player_profiles[attacker.user.id]["class_mastery_xp"] += MASTERY_XP_PER_ATTACK
+    return damage
+
+def process_combo_attack(attacker, defender, combo_attributes, teamwork_xp, battlefield):
+    combo_key = tuple(sorted(combo_attributes))
+    combo_attack = COMBO_ATTACKS.get(combo_key, {"name": f"{combo_attributes[0]} {combo_attributes[1]} Combo", "damage_range": (20, 30), "effect": "A combined elemental attack", "accuracy": 0.75, "self_damage_risk": 0.15})
+    damage = random.randint(combo_attack["damage_range"][0], combo_attack["damage_range"][1])
+    # Apply accuracy based on teamwork XP
+    accuracy = combo_attack["accuracy"] + min(teamwork_xp / 1000, 0.2)  # Max 20% accuracy boost
+    if random.random() > accuracy:
+        damage = 0
+    # Apply self-damage risk based on teamwork XP
+    self_damage_risk = combo_attack["self_damage_risk"] - min(teamwork_xp / 1000, 0.1)  # Max 10% risk reduction
+    if random.random() < self_damage_risk:
+        self_damage = damage // 2
+        attacker.hp -= self_damage
+        attacker.stats["total_damage_taken"] += self_damage
+        attacker.global_player_profiles[attacker.user.id]["stats"]["total_damage_taken"] += self_damage
+    # Apply battlefield modifiers
+    from data.battlefields import BATTLEFIELD_MODIFIERS
+    battlefield_modifiers = BATTLEFIELD_MODIFIERS.get(battlefield, {})
+    for attr, modifier in battlefield_modifiers.items():
+        if attr in combo_attributes and modifier["type"] == "boost":
+            damage *= modifier["value"]
+        elif attr in combo_attributes and modifier["type"] == "nerf":
+            damage *= modifier["value"]
+    # Apply counterance XP reduction
+    for attr in combo_attributes:
+        counterance_key = f"attr_{attr}"
+        counterance_xp = defender.global_player_profiles[defender.user.id]["counterance_xp"].get(counterance_key, 0)
+        reduction = min(counterance_xp / 1000, 0.5)  # Max 50% reduction
+        damage *= (1 - reduction)
+    # Apply critical hit
+    if random.random() < 0.1:  # 10% chance
+        damage *= 1.5
+        attacker.stats["critical_hits"] += 1
+        attacker.global_player_profiles[attacker.user.id]["stats"]["critical_hits"] += 1
+    defender.hp -= damage
+    attacker.stats["total_damage_dealt"] += damage
+    attacker.global_player_profiles[attacker.user.id]["stats"]["total_damage_dealt"] += damage
+    defender.stats["total_damage_taken"] += damage
+    defender.global_player_profiles[defender.user.id]["stats"]["total_damage_taken"] += damage
+    # Update counterance XP
+    for attr in combo_attributes:
+        counterance_key = f"attr_{attr}"
+        defender.global_player_profiles[defender.user.id]["counterance_xp"][counterance_key] = defender.global_player_profiles[defender.user.id]["counterance_xp"].get(counterance_key, 0) + COUNTERANCE_XP_PER_COMBO
+    # Update mastery XP
+    for attr in combo_attributes:
+        attacker.global_player_profiles[attacker.user.id]["attribute_mastery_xp"][attr] = attacker.global_player_profiles[attacker.user.id]["attribute_mastery_xp"].get(attr, 0) + MASTERY_XP_PER_ATTACK
+    return damage, combo_attack["name"]

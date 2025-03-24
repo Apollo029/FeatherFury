@@ -1,21 +1,12 @@
 # core/bot.py
 import discord
-import random
 from discord import app_commands
-import schedule
 import asyncio
-from datetime import datetime
-import pytz
-import unicodedata
-from discord.ui import Select, View
-from core.events import on_ready, on_message, on_reaction_add, update_stats_embed
-from data.battlefields import BATTLEFIELD_MODIFIERS, BATTLEFIELD_DESCRIPTIONS
-from data.attributes import attribute_emojis, ATTRIBUTE_ATTACKS, PRIMARY_ATTRIBUTES, attribute_emoji_fallbacks
-from data.classes import CLASS_ATTACKS, CLASS_STATS
-from data.class_types import Player, generate_race_effects
+from core.events import on_ready, on_message, on_reaction_add
 from data.constants import CHANNEL_CONFIGS
-from utils.roles import assign_dead_role
-from battle.state import initialize_battle_state
+from data.class_types import generate_race_effects
+from data.classes import CLASS_STATS
+from data.attributes import PRIMARY_ATTRIBUTES
 
 class FeatherFuryBot(discord.Client):
     def __init__(self):
@@ -31,33 +22,27 @@ class FeatherFuryBot(discord.Client):
         self.tree = app_commands.CommandTree(self)
         self.bot_name = "FeatherFury"
         self.global_player_profiles = {}
-        self.active_battles = {}
-        self.battle_counter = 0
         self.class_selection_message = {}
         self.attribute_selection_message = {}
         self.race_selection_message = {}
         self.stats_message_ids = {}
+        self.active_battles = {}
+        self.battle_counter = 0
         self.tournament_active = False
         self.tournament_bracket = {}
         self.tournament_winner = None
-        self.custom_attack_duration = 2
-        self.current_quarter = (datetime.now(pytz.UTC).month - 1) // 3 + 1
+        self.current_quarter = (discord.utils.utcnow().month - 1) // 3 + 1
         self.reaction_processed = {}
         print("Bot attributes initialized")
 
     async def setup_hook(self):
         print("Syncing command tree...")
         self.tree.add_command(app_commands.Command(name="attack", description="Start a battle with another user or bot", callback=self.attack))
-        self.tree.add_command(app_commands.Command(name="reinforce", description="Boost your strength in an active battle", callback=self.reinforce))
-        self.tree.add_command(app_commands.Command(name="edit_bot_profile", description="Edit a bot's profile (admin only)", callback=self.edit_bot_profile))
-        self.tree.add_command(app_commands.Command(name="reset_class", description="Reset a user's class and race (admin only)", callback=self.reset_class))
+        self.tree.add_command(app_commands.Command(name="reinforce", description="Call for reinforcements in an active battle", callback=self.reinforce))
         self.tree.add_command(app_commands.Command(name="enter_race", description="Enter a race with a custom name and color", callback=self.enter_race))
-        self.tree.add_command(app_commands.Command(name="remove_race", description="Remove a user's race (admin only)", callback=self.remove_race))
-        self.tree.add_command(app_commands.Command(name="remove_attribute", description="Remove an attribute from a user (admin only)", callback=self.remove_attribute))
-        self.tree.add_command(app_commands.Command(name="create_attribute", description="Create a new attribute (admin only)", callback=self.create_attribute))
-        self.tree.add_command(app_commands.Command(name="create_battlefield", description="Create a new battlefield (admin only)", callback=self.create_battlefield))
-        self.tree.add_command(app_commands.Command(name="create_class", description="Create a new class (admin only)", callback=self.create_class))
         self.tree.add_command(app_commands.Command(name="stats", description="View your stats or another user's stats", callback=self.stats))
+        self.tree.add_command(app_commands.Command(name="counterance_stats", description="View your counterance stats (hidden stats)", callback=self.counterance_stats))
+        self.tree.add_command(app_commands.Command(name="config", description="Configure server settings (admin only)", callback=self.config))
         try:
             print("Starting global command sync...")
             await self.tree.sync()
@@ -82,8 +67,8 @@ class FeatherFuryBot(discord.Client):
             return True
         raise app_commands.errors.CheckFailure("You need the 'Admin' role to run this command!")
 
-    @app_commands.describe(opponent="The user or bot to battle")
-    async def attack(self, interaction: discord.Interaction, opponent: discord.Member):
+    @app_commands.describe(opponent="The user or bot to battle", battlefield="The battlefield type (e.g., Fire, Water, Ice)")
+    async def attack(self, interaction: discord.Interaction, opponent: discord.Member, battlefield: str = None):
         await interaction.response.defer()
         guild = interaction.guild
         user = interaction.user
@@ -100,6 +85,49 @@ class FeatherFuryBot(discord.Client):
         if dead_role in opponent.roles:
             await interaction.followup.send(f"{opponent.mention} is dead and cannot be challenged!")
             return
+
+        # Check if opponent is FeatherFury and user is not a Grand Master
+        if opponent.id == self.user.id:  # FeatherFury
+            user_profile = self.global_player_profiles[user.id]
+            required_mastery = ["Grand Master"]
+            is_grand_master = (
+                user_profile.get("class_mastery_title", "Novice") in required_mastery and
+                all(user_profile.get(f"{attr}_mastery_title", "Novice") in required_mastery for attr in user_profile.get("attributes", []))
+            )
+            if not is_grand_master:
+                await interaction.followup.send(f"{user.mention}, you are not worthy to challenge {opponent.mention}! You must be a Grand Master in your class and all attributes.")
+                # Simulate instant kill
+                user_profile["stats"]["losses"] += 1
+                user_profile["stats"]["losses_to_bots"] += 1
+                opponent_profile = self.global_player_profiles[opponent.id]
+                opponent_profile["stats"]["wins"] += 1
+                opponent_profile["stats"]["bots_beaten"] += 1
+                from utils.roles import assign_dead_role
+                await assign_dead_role(guild, user)
+                from core.events import update_stats_embed
+                await update_stats_embed(self, guild, user.id)
+                await update_stats_embed(self, guild, opponent.id)
+                return
+
+        # Handle battle tokens
+        from data.battlefields import BATTLEFIELD_MODIFIERS
+        user_profile = self.global_player_profiles[user.id]
+        server_tokens = user_profile.setdefault("battle_tokens", {}).setdefault(str(guild.id), 3)
+        if battlefield:
+            if battlefield not in BATTLEFIELD_MODIFIERS:
+                await interaction.followup.send(f"Invalid battlefield type {battlefield}. Available: {', '.join(BATTLEFIELD_MODIFIERS.keys())}")
+                return
+            if server_tokens < 1:
+                battlefield = random.choice(list(BATTLEFIELD_MODIFIERS.keys()))
+                await interaction.followup.send(f"{user.mention}, you have no battle tokens! Randomizing battlefield to {battlefield}.")
+            else:
+                user_profile["battle_tokens"][str(guild.id)] -= 1
+                await interaction.followup.send(f"{user.mention} used a battle token to select {battlefield}. Tokens remaining: {user_profile['battle_tokens'][str(guild.id)]}")
+        else:
+            battlefield = random.choice(list(BATTLEFIELD_MODIFIERS.keys()))
+            await interaction.followup.send(f"No battlefield specified. Randomizing battlefield to {battlefield}.")
+
+        # Start the battle
         battle_channel_name = CHANNEL_CONFIGS["battlefield_channel"]
         battle_channel = discord.utils.get(guild.text_channels, name=battle_channel_name.lstrip('#'))
         if not battle_channel:
@@ -118,16 +146,18 @@ class FeatherFuryBot(discord.Client):
             await interaction.followup.send("I don't have permission to create threads!")
             return
         self.battle_counter += 1
-        battle_id = f"battle_{self.battle_counter}_{int(datetime.now(pytz.UTC).timestamp())}"
+        battle_id = f"battle_{self.battle_counter}_{int(discord.utils.utcnow().timestamp())}"
+        from data.class_types import Player
         player1 = Player(user, self.global_player_profiles[user.id]["class"], self.global_player_profiles[user.id]["attributes"], self.global_player_profiles[user.id]["level"], self.global_player_profiles[user.id]["race"], self.global_player_profiles[user.id]["race_effects"])
         player2 = Player(opponent, self.global_player_profiles[opponent.id]["class"], self.global_player_profiles[opponent.id]["attributes"], self.global_player_profiles[opponent.id]["level"], self.global_player_profiles[opponent.id]["race"], self.global_player_profiles[opponent.id]["race_effects"])
         print(f"Player1 stats: hp={player1.hp}/{player1.max_hp}, attack={player1.attack}, defense={player1.defense}, speed={player1.speed}")
         print(f"Player2 stats: hp={player2.hp}/{player2.max_hp}, attack={player2.attack}, defense={player2.defense}, speed={player2.speed}")
-        self.active_battles[battle_id] = initialize_battle_state(player1, player2, thread, random.choice(list(BATTLEFIELD_MODIFIERS.keys())))
+        from battle.state import initialize_battle_state
+        self.active_battles[battle_id] = initialize_battle_state(player1, player2, thread, battlefield, is_bot_fight=opponent.bot)
         await self.active_battles[battle_id]["thread"].send(f"Battle started between {user.mention} and {opponent.mention} in {self.active_battles[battle_id]['battlefield']}!\n{BATTLEFIELD_DESCRIPTIONS[self.active_battles[battle_id]['battlefield']]}")
         turn_message = await self.active_battles[battle_id]["thread"].send(f"{user.mention}'s turn! React with an attribute, ⚔️, or 🛡️ to act.")
         for attr in player1.attributes:
-            if attr in ATTRIBUTE_ATTACKS:
+            if attr in PRIMARY_ATTRIBUTES:
                 emoji = attribute_emojis.get(attr, "❓")
                 await turn_message.add_reaction(emoji)
         await turn_message.add_reaction("⚔️")
@@ -147,67 +177,35 @@ class FeatherFuryBot(discord.Client):
             await interaction.followup.send(f"{user.mention}, you are not in an active battle!")
             return
         battle = self.active_battles[battle_id]
+        if battle["is_bot_fight"]:
+            await interaction.followup.send(f"{user.mention}, reinforcements are not allowed in bot fights!")
+            return
         player = battle["player1"] if user == battle["player1"].user else battle["player2"]
-        if "reinforce_buff" not in battle:
-            battle["reinforce_buff"] = {}
-        battle["reinforce_buff"][user.id] = {"attack_boost": 1.1, "turns_remaining": 3}
-        await battle["thread"].send(f"{user.mention} reinforces their troops! +10% attack for 3 turns.")
-        await interaction.followup.send(f"{user.mention}, you have reinforced your troops!")
+        if player.hp > player.max_hp * 0.1:
+            await interaction.followup.send(f"{user.mention}, your HP must be below 10% to call for reinforcements!")
+            return
+        if len(battle.get("reinforcements", [])) >= 2:
+            await interaction.followup.send(f"{user.mention}, you already have the maximum number of reinforcements (2)!")
+            return
+        # Placeholder for reinforcement logic (to be implemented in Phase 2)
+        await interaction.followup.send(f"{user.mention}, reinforcement logic will be implemented in Phase 2.")
 
-    @app_commands.check(check_admin)
-    @app_commands.describe(bot_user="The bot to edit", class_type="The bot's new class", attributes="Comma-separated attributes (e.g., Fire,Water,Ice)")
-    async def edit_bot_profile(self, interaction: discord.Interaction, bot_user: discord.Member, class_type: str, attributes: str):
-        await interaction.response.defer()
-        if not bot_user.bot:
-            await interaction.followup.send(f"{bot_user.mention} is not a bot!")
-            return
-        if class_type not in CLASS_STATS and class_type != "All Classes":
-            await interaction.followup.send(f"Invalid class type {class_type}. Available: {', '.join(CLASS_STATS.keys())}")
-            return
-        attr_list = [attr.strip() for attr in attributes.split(",")]
-        if len(attr_list) > 3:
-            await interaction.followup.send("A bot can only have up to 3 attributes!")
-            return
-        for attr in attr_list:
-            if attr not in PRIMARY_ATTRIBUTES:
-                await interaction.followup.send(f"Invalid attribute {attr}. Available: {', '.join(PRIMARY_ATTRIBUTES)}")
-                return
-        self.global_player_profiles[bot_user.id] = {
-            "class": class_type,
-            "attributes": attr_list,
-            "race": self.global_player_profiles.get(bot_user.id, {}).get("race", "BotRace_1"),
-            "stats": {
-                "wins": 0,
-                "losses": 0,
-                "total_battles": 0,
-                "total_damage_dealt": 0,
-                "total_damage_taken": 0,
-                "critical_hits": 0,
-                "critical_wins": 0,
-                "bots_beaten": 0,
-                "losses_to_bots": 0
-            },
-            "level": self.global_player_profiles.get(bot_user.id, {}).get("level", 1),
-            "xp": 0,
-            "race_effects": self.global_player_profiles.get(bot_user.id, {}).get("race_effects", {"effects": [], "power_index": 0})
-        }
-        await interaction.followup.send(f"Updated profile for {bot_user.mention}: Class: {class_type}, Attributes: {attr_list}")
-        await update_stats_embed(self, interaction.guild, bot_user.id)
-
-    @app_commands.check(check_admin)
-    @app_commands.describe(user="The user whose class and race to reset")
-    async def reset_class(self, interaction: discord.Interaction, user: discord.Member):
+    @app_commands.describe(name="The name of your race", color="The color of your race (e.g., red, #000000, 000000)")
+    async def enter_race(self, interaction: discord.Interaction, name: str, color: str):
         await interaction.response.defer()
         guild = interaction.guild
-        if user.id not in self.global_player_profiles:
-            await interaction.followup.send(f"{user.mention} has no profile to reset!")
+        user = interaction.user
+        profile = self.global_player_profiles.get(user.id, {})
+        class_type = profile.get("class")
+        attributes = profile.get("attributes", [])
+        if user.id in self.global_player_profiles and self.global_player_profiles[user.id].get("race"):
+            await interaction.followup.send(f"{user.mention}, you have already entered a race! Ask an admin to reset it if needed.")
             return
-        current_class = self.global_player_profiles[user.id].get("class")
-        current_race = self.global_player_profiles[user.id].get("race")
-        self.global_player_profiles[user.id] = {
-            "class": None,
-            "attributes": [],
-            "race": None,
+        race_effects = generate_race_effects(name, color, class_type=class_type, attributes=attributes, is_bot=False)
+        self.global_player_profiles[user.id] = self.global_player_profiles.get(user.id, {
+            "class": class_type,
+            "attributes": attributes,
+            "race": name,
             "stats": {
                 "wins": 0,
                 "losses": 0,
@@ -217,195 +215,55 @@ class FeatherFuryBot(discord.Client):
                 "critical_hits": 0,
                 "critical_wins": 0,
                 "bots_beaten": 0,
-                "losses_to_bots": 0
+                "losses_to_bots": 0,
+                "monthly_trophies": 0,
+                "quarterly_trophies": 0
             },
-            "level": 1,
-            "xp": 0,
-            "race_effects": {"effects": [], "power_index": 0}
-        }
-        class_role = discord.utils.get(guild.roles, name=current_class) if current_class else None
-        race_role = discord.utils.get(guild.roles, name=current_race) if current_race else None
-        if class_role and class_role in user.roles:
-            try:
-                await user.remove_roles(class_role)
-                print(f"Removed class role {current_class} from {user.display_name}")
-            except discord.Forbidden:
-                await interaction.followup.send(f"Failed to remove class role {current_class} due to permissions!")
-                return
-        if race_role and race_role in user.roles:
-            try:
-                await user.remove_roles(race_role)
-                print(f"Removed race role {current_race} from {user.display_name}")
-            except discord.Forbidden:
-                await interaction.followup.send(f"Failed to remove race role {current_race} due to permissions!")
-                return
-        await interaction.followup.send(f"Reset class and race for {user.mention}!")
-        await update_stats_embed(self, guild, user.id)
-
-@app_commands.describe(name="The name of your race", color="The color of your race (e.g., red, #000000, 000000)")
-async def enter_race(self, interaction: discord.Interaction, name: str, color: str):
-    await interaction.response.defer()
-    guild = interaction.guild
-    user = interaction.user
-    profile = self.global_player_profiles.get(user.id, {})
-    class_type = profile.get("class")
-    attributes = profile.get("attributes", [])
-    if user.id in self.global_player_profiles and self.global_player_profiles[user.id].get("race"):
-        await interaction.followup.send(f"{user.mention}, you have already entered a race! Ask an admin to reset it if needed.")
-        return
-    race_effects = generate_race_effects(name, color, class_type=class_type, attributes=attributes)
-    self.global_player_profiles[user.id] = self.global_player_profiles.get(user.id, {
-        "class": class_type,
-        "attributes": attributes,
-        "race": name,
-        "stats": {
-            "wins": 0,
-            "losses": 0,
-            "total_battles": 0,
-            "total_damage_dealt": 0,
-            "total_damage_taken": 0,
-            "critical_hits": 0,
-            "critical_wins": 0,
-            "bots_beaten": 0,
-            "losses_to_bots": 0
-        },
-        "level": profile.get("level", 1),
-        "xp": profile.get("xp", 0),
-        "race_effects": race_effects,
-        "race_color": color  # Store the race color
-    })
-    try:
-        hex_color = color
-        if not color.startswith("#"):
-            color_map = {
-                "red": "#FF0000",
-                "green": "#00FF00",
-                "blue": "#0000FF",
-                "white": "#FFFFFF",
-                "black": "#000000",
-                "yellow": "#FFFF00",
-                "purple": "#800080",
-                "orange": "#FFA500",
-                "pink": "#FFC0CB",
-                "cyan": "#00FFFF"
-            }
-            hex_color = color_map.get(color.lower(), "#FFFFFF")
-            if len(color) == 6 and all(c in '0123456789ABCDEFabcdef' for c in color):
-                hex_color = f"#{color}"
+            "level": profile.get("level", 1),
+            "xp": profile.get("xp", 0),
+            "teamwork_xp": profile.get("teamwork_xp", 0),
+            "class_mastery_xp": profile.get("class_mastery_xp", 0),
+            "class_mastery_title": profile.get("class_mastery_title", "Novice"),
+            "attribute_mastery_xp": profile.get("attribute_mastery_xp", {}),
+            "attribute_mastery_titles": profile.get("attribute_mastery_titles", {}),
+            "counterance_xp": profile.get("counterance_xp", {}),
+            "battle_tokens": profile.get("battle_tokens", {}),
+            "race_effects": race_effects,
+            "race_color": color
+        })
         try:
-            discord.Color.from_str(hex_color)
-        except ValueError:
-            await interaction.followup.send(f"Invalid color format for '{color}'. Use a color name (e.g., red, blue) or a hex code (e.g., #FF0000 or 000000).")
-            return
-        role = await guild.create_role(name=name, color=discord.Color.from_str(hex_color))
-        await user.add_roles(role)
-        self.global_player_profiles[user.id]["race_color"] = hex_color  # Ensure color is stored
-        confirmation = await interaction.followup.send(f"Successfully completed /EnterRace for {user.display_name} with race {name} and effects {race_effects['effects']}")
-        await asyncio.sleep(10)
-        await confirmation.delete()
-        await update_stats_embed(self, guild, user.id)
-    except discord.HTTPException as e:
-        await interaction.followup.send(f"Failed to create role for race {name}: {e}")
-
-    @app_commands.check(check_admin)
-    @app_commands.describe(user="The user whose race to remove")
-    async def remove_race(self, interaction: discord.Interaction, user: discord.Member):
-        await interaction.response.defer()
-        if user.id not in self.global_player_profiles or not self.global_player_profiles[user.id].get("race"):
-            await interaction.followup.send(f"{user.mention} has no race to remove!")
-            return
-        race = self.global_player_profiles[user.id]["race"]
-        race_role = discord.utils.get(interaction.guild.roles, name=race)
-        if race_role and race_role in user.roles:
+            hex_color = color
+            if not color.startswith("#"):
+                color_map = {
+                    "red": "#FF0000",
+                    "green": "#00FF00",
+                    "blue": "#0000FF",
+                    "white": "#FFFFFF",
+                    "black": "#000000",
+                    "yellow": "#FFFF00",
+                    "purple": "#800080",
+                    "orange": "#FFA500",
+                    "pink": "#FFC0CB",
+                    "cyan": "#00FFFF"
+                }
+                hex_color = color_map.get(color.lower(), "#FFFFFF")
+                if len(color) == 6 and all(c in '0123456789ABCDEFabcdef' for c in color):
+                    hex_color = f"#{color}"
             try:
-                await user.remove_roles(race_role)
-                print(f"Removed race role {race} from {user.display_name}")
-            except discord.Forbidden:
-                await interaction.followup.send(f"Failed to remove race role {race} due to permissions!")
+                discord.Color.from_str(hex_color)
+            except ValueError:
+                await interaction.followup.send(f"Invalid color format for '{color}'. Use a color name (e.g., red, blue) or a hex code (e.g., #FF0000 or 000000).")
                 return
-        self.global_player_profiles[user.id]["race"] = None
-        self.global_player_profiles[user.id]["race_effects"] = {"effects": [], "power_index": 0}
-        await interaction.followup.send(f"Removed race {race} from {user.mention}!")
-        await update_stats_embed(self, guild, user.id)
-
-    @app_commands.check(check_admin)
-    @app_commands.describe(user="The user whose attribute to remove")
-    async def remove_attribute(self, interaction: discord.Interaction, user: discord.Member):
-        await interaction.response.defer()
-        if user.id not in self.global_player_profiles or not self.global_player_profiles[user.id].get("attributes"):
-            await interaction.followup.send(f"{user.mention} has no attributes to remove!")
-            return
-        attributes = self.global_player_profiles[user.id]["attributes"]
-        if not attributes:
-            await interaction.followup.send(f"{user.mention} has no attributes to remove!")
-            return
-        options = [discord.SelectOption(label=attr, value=attr) for attr in attributes]
-        select = Select(placeholder="Select an attribute to remove", options=options)
-
-        async def select_callback(interaction: discord.Interaction):
-            selected_attribute = select.values[0]
-            attributes.remove(selected_attribute)
-            self.global_player_profiles[user.id]["attributes"] = attributes
-            attribute_role = discord.utils.get(interaction.guild.roles, name=selected_attribute)
-            if attribute_role and attribute_role in user.roles:
-                try:
-                    await user.remove_roles(attribute_role)
-                    print(f"Removed attribute role {selected_attribute} from {user.display_name}")
-                except discord.Forbidden:
-                    await interaction.followup.send(f"Failed to remove attribute role {selected_attribute} due to permissions!")
-                    return
-            await interaction.response.send_message(f"Removed {selected_attribute} from {user.mention}!")
-            await update_stats_embed(self, interaction.guild, user.id)
-
-        select.callback = select_callback
-        view = View()
-        view.add_item(select)
-        await interaction.followup.send(f"Select an attribute to remove from {user.mention}:", view=view)
-
-    @app_commands.check(check_admin)
-    @app_commands.describe(name="Name of the new attribute", emoji="Emoji for the new attribute")
-    async def create_attribute(self, interaction: discord.Interaction, name: str, emoji: str):
-        await interaction.response.defer()
-        if name in PRIMARY_ATTRIBUTES:
-            await interaction.followup.send(f"Attribute {name} already exists!")
-            return
-        PRIMARY_ATTRIBUTES.append(name)
-        attribute_emojis[emoji] = name
-        attribute_emoji_fallbacks[name] = emoji.strip(":") if emoji.startswith(":") and emoji.endswith(":") else name.lower()
-        await interaction.followup.send(f"Created new attribute {name} with emoji {emoji}")
-
-    @app_commands.check(check_admin)
-    @app_commands.describe(name="Name of the battlefield", effect="Description of the battlefield effect", modifier="Modifiers (e.g., Winged Creature:1.2,Aquatic Creature:0.9)")
-    async def create_battlefield(self, interaction: discord.Interaction, name: str, effect: str, modifier: str):
-        await interaction.response.defer()
-        if name in BATTLEFIELD_MODIFIERS:
-            await interaction.followup.send(f"Battlefield {name} already exists!")
-            return
-        modifier_dict = {}
-        for mod in modifier.split(","):
-            key, value = mod.split(":")
-            modifier_dict[key.strip()] = float(value)
-        BATTLEFIELD_MODIFIERS[name] = modifier_dict
-        BATTLEFIELD_DESCRIPTIONS[name] = effect
-        await interaction.followup.send(f"Created new battlefield {name} with effect '{effect}' and modifiers {modifier_dict}")
-
-    @app_commands.check(check_admin)
-    @app_commands.describe(name="Name of the class", emoji="Emoji for the class", hp="Base HP", attack="Base attack", defense="Base defense", description="Class description")
-    async def create_class(self, interaction: discord.Interaction, name: str, emoji: str, hp: int, attack: int, defense: int, description: str):
-        await interaction.response.defer()
-        if name in CLASS_STATS:
-            await interaction.followup.send(f"Class {name} already exists!")
-            return
-        CLASS_STATS[name] = {
-            "emoji": emoji,
-            "hp": hp,
-            "attack": attack,
-            "defense": defense,
-            "speed": 15,
-            "description": description
-        }
-        CLASS_ATTACKS[name] = {"name": f"{name} Strike", "damage_range": (15, 25), "effect": f"Standard {name} attack"}
-        await interaction.followup.send(f"Created new class {name} with stats: HP {hp}, Attack {attack}, Defense {defense}, Description: {description}")
+            role = await guild.create_role(name=name, color=discord.Color.from_str(hex_color))
+            await user.add_roles(role)
+            self.global_player_profiles[user.id]["race_color"] = hex_color
+            confirmation = await interaction.followup.send(f"Successfully completed /EnterRace for {user.display_name} with race {name} and effects {race_effects['effects']}")
+            await asyncio.sleep(10)
+            await confirmation.delete()
+            from core.events import update_stats_embed
+            await update_stats_embed(self, guild, user.id)
+        except discord.HTTPException as e:
+            await interaction.followup.send(f"Failed to create role for race {name}: {e}")
 
     @app_commands.describe(user="The user to view stats for (default: yourself)")
     async def stats(self, interaction: discord.Interaction, user: discord.Member = None):
@@ -415,19 +273,72 @@ async def enter_race(self, interaction: discord.Interaction, name: str, color: s
         if not profile:
             await interaction.followup.send(f"{target.mention} has not set up a profile yet!")
             return
-        race_effects = ", ".join([f"{effect['name']}: {effect['value']}" for effect in profile.get("race_effects", {}).get("effects", [])]) or "None"
-        embed = discord.Embed(title=f"{target.display_name}'s Stats", color=discord.Color.gold())
+        race_effects = profile.get("race_effects", {}).get("effects", [])
+        race_effects_display = "\n".join([
+            f"{effect['name']}: {effect['value']}" + 
+            (f" (Weakness: {effect['weakness']}, Strength: {effect['strength']})" if effect.get("type") == "dual" else "")
+            for effect in race_effects
+        ]) or "None"
+        race_color = profile.get("race_color", "#FFD700")
+        try:
+            embed_color = discord.Color.from_str(race_color)
+        except ValueError:
+            embed_color = discord.Color.gold()
+        embed = discord.Embed(title=f"{target.display_name}'s Stats", color=embed_color)
         embed.add_field(name="Class", value=profile.get("class", "None"), inline=True)
         embed.add_field(name="Attributes", value=", ".join(profile.get("attributes", [])) if profile.get("attributes") else "None", inline=True)
         embed.add_field(name="Race", value=profile.get("race", "None"), inline=True)
-        embed.add_field(name="Race Effects", value=race_effects, inline=False)
+        embed.add_field(name="Race Effects", value=race_effects_display, inline=False)
         embed.add_field(name="Level", value=profile.get("level", 1), inline=True)
-        embed.add_field(name="Wins/Losses", value=f"{profile.get('stats', {}).get('wins', 0)}/{profile.get('stats', {}).get('losses', 0)}", inline=True)
-        embed.add_field(name="Total Battles", value=profile.get("stats", {}).get("total_battles", 0), inline=True)
-        embed.add_field(name="Damage Dealt", value=profile.get("stats", {}).get("total_damage_dealt", 0), inline=True)
-        embed.add_field(name="Damage Taken", value=profile.get("stats", {}).get("total_damage_taken", 0), inline=True)
-        embed.add_field(name="Critical Hits", value=profile.get("stats", {}).get("critical_hits", 0), inline=True)
+        embed.add_field(name="Wins (Players/Bots)", value=f"{profile.get('stats', {}).get('wins', 0)}/{profile.get('stats', {}).get('bots_beaten', 0)}", inline=True)
+        embed.add_field(name="Losses (Players/Bots)", value=f"{profile.get('stats', {}).get('losses', 0)}/{profile.get('stats', {}).get('losses_to_bots', 0)}", inline=True)
+        embed.add_field(name="Total Battles", value=profile.get('stats', {}).get('total_battles', 0), inline=True)
+        embed.add_field(name="Damage Dealt", value=profile.get('stats', {}).get('total_damage_dealt', 0), inline=True)
+        embed.add_field(name="Damage Taken", value=profile.get('stats', {}).get('total_damage_taken', 0), inline=True)
+        embed.add_field(name="Critical Hits", value=profile.get('stats', {}).get('critical_hits', 0), inline=True)
+        embed.add_field(name="Trophies (Monthly/Quarterly)", value=f"{profile.get('stats', {}).get('monthly_trophies', 0)}/{profile.get('stats', {}).get('quarterly_trophies', 0)}", inline=True)
+        embed.add_field(name="Battle Tokens", value=profile.get("battle_tokens", {}).get(str(interaction.guild.id), 3), inline=True)
+        embed.add_field(name="XP", value=profile.get("xp", 0), inline=True)
+        embed.add_field(name="Teamwork XP", value=profile.get("teamwork_xp", 0), inline=True)
+        embed.add_field(name=f"{profile.get('class', 'None')} Mastery", value=f"{profile.get('class_mastery_title', 'Novice')} ({profile.get('class_mastery_xp', 0)} XP)", inline=True)
+        for attr in profile.get("attributes", []):
+            embed.add_field(name=f"{attr} Mastery", value=f"{profile.get('attribute_mastery_titles', {}).get(attr, 'Novice')} ({profile.get('attribute_mastery_xp', {}).get(attr, 0)} XP)", inline=True)
+        from core.events import update_stats_embed
+        await update_stats_embed(self, interaction.guild, target.id, embed=embed)
         await interaction.followup.send(embed=embed)
+
+    async def counterance_stats(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        user = interaction.user
+        profile = self.global_player_profiles.get(user.id, {})
+        if not profile:
+            await interaction.followup.send(f"{user.mention}, you have not set up a profile yet!")
+            return
+        embed = discord.Embed(title=f"{user.display_name}'s Counterance Stats", color=discord.Color.purple())
+        counterance_xp = profile.get("counterance_xp", {})
+        for class_name in CLASS_STATS.keys():
+            xp = counterance_xp.get(f"class_{class_name}", 0)
+            embed.add_field(name=f"{class_name} Counterance", value=f"{xp} XP", inline=True)
+        for attr in PRIMARY_ATTRIBUTES:
+            xp = counterance_xp.get(f"attr_{attr}", 0)
+            embed.add_field(name=f"{attr} Counterance", value=f"{xp} XP", inline=True)
+        message = await interaction.followup.send(embed=embed)
+        await asyncio.sleep(20)
+        await message.delete()
+
+    @app_commands.check(check_admin)
+    @app_commands.describe(min_tokens="Minimum battle tokens per week", max_tokens="Maximum battle tokens allowed")
+    async def config(self, interaction: discord.Interaction, min_tokens: int = None, max_tokens: int = None):
+        await interaction.response.defer()
+        guild = interaction.guild
+        from utils.config import update_server_config, get_server_config
+        config = get_server_config(guild.id)
+        if min_tokens is not None:
+            config["min_battle_tokens"] = min_tokens
+        if max_tokens is not None:
+            config["max_battle_tokens"] = max_tokens
+        update_server_config(guild.id, config)
+        await interaction.followup.send(f"Updated server config: Min Tokens = {config['min_battle_tokens']}, Max Tokens = {config['max_battle_tokens']}")
 
     async def on_ready(self):
         print("on_ready event triggered")
@@ -440,3 +351,4 @@ async def enter_race(self, interaction: discord.Interaction, name: str, color: s
     async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
         print(f"on_reaction_add event triggered for user {user.name}")
         await on_reaction_add(self, reaction, user)
+

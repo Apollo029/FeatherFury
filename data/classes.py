@@ -25,26 +25,15 @@ CLASS_STATS = {
         "defense": 18,
         "speed": 12,
         "description": "A sturdy creature of the earth."
+    },
+    "Omega Fury": {  # Special class for FeatherFury
+        "emoji": "🔥",
+        "hp": 150,
+        "attack": 50,
+        "defense": 40,
+        "speed": 30,
+        "description": "An unstoppable force of nature, embodying all elements."
     }
-}
-
-# Define class-specific attacks
-CLASS_ATTACKS = {
-    "Winged Creature": [
-        {"name": "Aerial Slash", "damage_range": (15, 25), "effect": "A swift air-based strike"},
-        {"name": "Wind Gust", "damage_range": (10, 20), "effect": "A gust that disrupts the enemy"},
-        {"name": "Feather Storm", "damage_range": (12, 22), "effect": "A flurry of feather attacks"}
-    ],
-    "Aquatic Creature": [
-        {"name": "Water Jet", "damage_range": (15, 25), "effect": "A powerful water blast"},
-        {"name": "Tidal Wave", "damage_range": (10, 20), "effect": "A sweeping water attack"},
-        {"name": "Bubble Barrage", "damage_range": (12, 22), "effect": "A barrage of water bubbles"}
-    ],
-    "Ground Creature": [
-        {"name": "Earth Smash", "damage_range": (15, 25), "effect": "A crushing earth strike"},
-        {"name": "Rock Throw", "damage_range": (10, 20), "effect": "A hurled rock attack"},
-        {"name": "Quake Stomp", "damage_range": (12, 22), "effect": "A ground-shaking stomp"}
-    ]
 }
 
 # Define announcements for class selection
@@ -63,5 +52,34 @@ CLASS_ANNOUNCEMENTS = {
         "Feel the earth shake! {player} stands as a {class_name}!",
         "{player} roars into battle as a {class_name}!",
         "The ground trembles as {player} becomes a {class_name}!"
+    ],
+    "Omega Fury": [
+        "The ultimate power awakens! {player} is the {class_name}!",
+        "{player} unleashes chaos as the {class_name}!",
+        "All tremble before {player}, the {class_name}!"
+    ]
+}
+
+# Define class-specific attacks
+CLASS_ATTACKS = {
+    "Winged Creature": [
+        {"name": "Aerial Slash", "damage_range": (15, 25), "effect": "A swift strike from above"},
+        {"name": "Wind Gust", "damage_range": (10, 20), "effect": "A powerful gust of wind"},
+        {"name": "Feather Storm", "damage_range": (12, 22), "effect": "A flurry of sharp feathers"}
+    ],
+    "Aquatic Creature": [
+        {"name": "Tentacle Whip", "damage_range": (15, 25), "effect": "A lashing strike with tentacles"},
+        {"name": "Ink Cloud", "damage_range": (10, 20), "effect": "A blinding cloud of ink"},
+        {"name": "Tidal Slam", "damage_range": (12, 22), "effect": "A crushing wave of water"}
+    ],
+    "Ground Creature": [
+        {"name": "Earth Roar", "damage_range": (15, 25), "effect": "A powerful roar that shakes the ground"},
+        {"name": "Claw Swipe", "damage_range": (10, 20), "effect": "A swift claw attack"},
+        {"name": "Boulder Charge", "damage_range": (12, 22), "effect": "A charging attack with earth force"}
+    ],
+    "Omega Fury": [
+        {"name": "Omega Strike", "damage_range": (50, 75), "effect": "A devastating all-encompassing attack"},
+        {"name": "Eternal Flame", "damage_range": (40, 60), "effect": "A fiery blast that burns all"},
+        {"name": "Cataclysmic Surge", "damage_range": (45, 65), "effect": "A surge of pure omega energy"}
     ]
 }

@@ -2,59 +2,7 @@
 from typing import List, Dict
 from data.classes import CLASS_STATS
 import random
-
-# Define effect pools for attributes
-ATTRIBUTE_EFFECTS = {
-    "Fire": {
-        "buffs": [
-            {"name": "Blaze Boost", "value": "+15% Fire Damage", "type": "normal"},
-            {"name": "Heat Wave", "value": "+10 Attack", "type": "normal"},
-            {"name": "Flame Aura", "value": "+5% Burn Chance", "type": "normal"},
-        ],
-        "debuffs": [
-            {"name": "Burnout", "value": "-5 HP", "type": "normal"},
-            {"name": "Overheat", "value": "-10% Attack", "type": "normal"},
-            {"name": "Ashen Skin", "value": "-5 Defense", "type": "normal"},
-        ],
-        "dual_buffs": [
-            {"name": "Inferno Rage", "value": "+30% Fire Damage, Burn Effect", "type": "dual", "weakness": "Water", "strength": "Fire"},
-            {"name": "Firestorm", "value": "+35% Fire Damage", "type": "dual", "weakness": "Water", "strength": "Fire"},
-        ]
-    },
-    "Water": {
-        "buffs": [
-            {"name": "Current Flow", "value": "+10% Healing", "type": "normal"},
-            {"name": "Wave Rider", "value": "+10 Speed", "type": "normal"},
-            {"name": "Aqua Barrier", "value": "+15 Defense", "type": "normal"},
-        ],
-        "debuffs": [
-            {"name": "Drowning", "value": "-5 HP", "type": "normal"},
-            {"name": "Slow Current", "value": "-10% Speed", "type": "normal"},
-            {"name": "Wet Armor", "value": "-5 Defense", "type": "normal"},
-        ],
-        "dual_buffs": [
-            {"name": "Tsunami Wave", "value": "+25% Water Damage", "type": "dual", "weakness": "Fire", "strength": "Water"},
-            {"name": "Flood Tide", "value": "+30% Water Damage", "type": "dual", "weakness": "Fire", "strength": "Water"},
-        ]
-    },
-    "Ice": {
-        "buffs": [
-            {"name": "Frost Shield", "value": "+15 Defense", "type": "normal"},
-            {"name": "Chill Touch", "value": "+10 Attack", "type": "normal"},
-            {"name": "Ice Armor", "value": "+5% Damage Reduction", "type": "normal"},
-        ],
-        "debuffs": [
-            {"name": "Frozen Limbs", "value": "-5 Speed", "type": "normal"},
-            {"name": "Cold Snap", "value": "-10% Attack", "type": "normal"},
-            {"name": "Icy Skin", "value": "-5 HP", "type": "normal"},
-        ],
-        "dual_buffs": [
-            {"name": "Glacial Burst", "value": "+20% Ice Damage, Freeze Effect", "type": "dual", "weakness": "Fire", "strength": "Ice"},
-            {"name": "Arctic Blast", "value": "+25% Ice Damage", "type": "dual", "weakness": "Fire", "strength": "Ice"},
-        ]
-    },
-    # Add more attributes as needed
-}
+from data.attributes import PRIMARY_ATTRIBUTES
 
 class Player:
     def __init__(self, user, class_type: str, attributes: List[str], level: int, race: str, race_effects: Dict = None):
@@ -79,8 +27,12 @@ class Player:
             "critical_hits": 0,
             "critical_wins": 0,
             "bots_beaten": 0,
-            "losses_to_bots": 0
+            "losses_to_bots": 0,
+            "monthly_trophies": 0,
+            "quarterly_trophies": 0
         }
+        self.combo_used = False
+        self.damage_dealt_in_battle = 0
 
     def _set_hp(self):
         base_hp = CLASS_STATS.get(self.class_type, {"hp": 80})["hp"]
@@ -125,58 +77,50 @@ class Player:
                 base_speed += value
         return base_speed + (self.level - 1) * 1
 
-    def take_damage(self, damage: int, dodge_chance: float = 0.1):
-        if random.random() < dodge_chance:
-            print(f"{self.user.name} dodged the attack!")
-            return 0
-        effective_damage = max(0, damage - self.defense)
-        self.hp = max(0, self.hp - effective_damage)
-        self.stats["total_damage_taken"] += effective_damage
-        if self.hp <= 0:
-            self.alive = False
-        return effective_damage
-
-    def heal(self, amount: int):
-        self.hp = min(self.max_hp, self.hp + amount)
-
-def generate_race_effects(race_name: str, color: str, class_type: str = None, attributes: List[str] = None) -> Dict:
-    """Generate race effects based on attributes."""
+def generate_race_effects(race_name: str, color: str, class_type: str = None, attributes: List[str] = None, is_bot: bool = False) -> Dict:
+    """Generate race effects based on attributes with balanced dynamic generation."""
     effects = []
     power_index = 0
 
-    # Select up to 2 effects from attributes (buffs, debuffs, dual buffs)
-    if attributes:
-        attr_effects = []
-        for attr in attributes:
-            if attr in ATTRIBUTE_EFFECTS:
-                attr_pools = [ATTRIBUTE_EFFECTS[attr]["buffs"], ATTRIBUTE_EFFECTS[attr]["debuffs"], ATTRIBUTE_EFFECTS[attr]["dual_buffs"]]
-                all_attr_effects = [effect for pool in attr_pools for effect in pool]
-                if all_attr_effects:
-                    attr_effects.append(random.choice(all_attr_effects))
-        if len(attr_effects) > 1:
-            selected_attr_effects = random.sample(attr_effects, 2)
-        elif attr_effects:
-            selected_attr_effects = [attr_effects[0]]
-        else:
-            selected_attr_effects = []
-        effects.extend(selected_attr_effects)
-        power_index += 5 if any(e["type"] == "normal" for e in selected_attr_effects) else 10
+    # Define a smaller set of elements and stat types to reduce random calls
+    stat_types = ['Attack', 'Defense', 'Speed', 'HP']
+    elements = ['Fire', 'Water', 'Ice', 'Electric', 'Earth', 'Nature', 'Metal', 'Air', 'Light', 'Shadow', 'Life', 'Death']
+    # Precompute possible weaknesses for each element
+    element_weaknesses = {element: [e for e in elements if e != element] for element in elements}
 
-    # Fill remaining slots (up to 4 effects) with random effects
+    # Fill up to 4 effects with dynamic effects
     while len(effects) < 4:
-        effect_type = random.choice(["buff", "debuff", "dual"])
-        if effect_type == "buff":
-            effect = {"name": f"{race_name} Boost", "value": f"+{random.randint(5, 15)} {random.choice(['Attack', 'Defense', 'Speed', 'HP'])}", "type": "normal"}
-        elif effect_type == "debuff":
-            effect = {"name": f"{race_name} Weakness", "value": f"-{random.randint(5, 10)} {random.choice(['Attack', 'Defense', 'Speed', 'HP'])}", "type": "normal"}
-        else:  # dual
-            element = random.choice(['Fire', 'Water', 'Ice', 'Electric', 'Earth', 'Nature', 'Metal', 'Air', 'Light', 'Shadow', 'Life', 'Death'])
-            effect = {"name": f"{race_name} Power", "value": f"+{random.randint(20, 35)}% {element} Damage", "type": "dual", "weakness": random.choice(['Fire', 'Water', 'Ice', 'Electric', 'Earth', 'Nature', 'Metal', 'Air', 'Light', 'Shadow', 'Life', 'Death']), "strength": element}
+        if is_bot:
+            # Bots get less random, more balanced effects
+            effect_type = random.choice(["buff", "buff", "debuff"])  # More likely to get buffs
+            if effect_type == "buff":
+                stat = random.choice(stat_types)
+                value = random.randint(5, 10)  # Smaller range for bots
+                effect = {"name": f"{race_name} Boost", "value": f"+{value} {stat}", "type": "normal"}
+            else:  # debuff
+                stat = random.choice(stat_types)
+                value = random.randint(3, 5)  # Smaller debuffs for bots
+                effect = {"name": f"{race_name} Weakness", "value": f"-{value} {stat}", "type": "normal"}
+        else:
+            # Players get more randomized effects
+            effect_type = random.choice(["buff", "debuff", "dual"])
+            if effect_type == "buff":
+                stat = random.choice(stat_types)
+                value = random.randint(5, 15)
+                effect = {"name": f"{race_name} Boost", "value": f"+{value} {stat}", "type": "normal"}
+            elif effect_type == "debuff":
+                stat = random.choice(stat_types)
+                value = random.randint(5, 10)
+                effect = {"name": f"{race_name} Weakness", "value": f"-{value} {stat}", "type": "normal"}
+            else:  # dual
+                element = random.choice(elements)
+                value = random.randint(20, 35)
+                weakness = random.choice(element_weaknesses[element])
+                effect = {"name": f"{race_name} Power", "value": f"+{value}% {element} Damage", "type": "dual", "weakness": weakness, "strength": element}
         if effect["name"] not in [e["name"] for e in effects]:
             effects.append(effect)
             power_index += 5 if effect["type"] == "normal" else 10
 
     power_index = min(power_index, 50)  # Cap power index at 50%
-    print(f"Generated race effects for {race_name} with color {color} (class: {class_type}, attrs: {attributes}): {effects}, power_index: {power_index}")
+    print(f"Generated race effects for {race_name} with color {color} (class: {class_type}, attrs: {attributes}, is_bot: {is_bot}): {effects}, power_index: {power_index}")
     return {"effects": effects, "power_index": power_index}
-
