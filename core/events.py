@@ -187,7 +187,7 @@ async def on_ready(bot):
                     print(f"Missing permissions to add reaction {emoji} to Attribute Selection message")
 
             # Race Selection Embed
-            race_embed = discord.Embed(title="Race Selection", description="Set your race using `/enter_race name:<your_race> color:<color>` (e.g., `/enter_race name:Arcturan color:0000FF`).\nYour race determines unique buffs and a custom role color!", color=discord.Color.green())
+            race_embed = discord.Embed(title="Race Selection", description="Set your race using `/enter_race name:<race_name> color:<color>` to define your unique race and role color!", color=discord.Color.green())
             race_message = await class_channel.send(embed=race_embed)
             bot.race_selection_message[guild.id] = race_message.id
             print(f"Sent Race Selection embed to {class_channel.name} (Message ID: {race_message.id})")
@@ -223,42 +223,73 @@ async def initialize_bot_profiles(bot):
                         ],
                         "power_index": 50
                     }
+                    bot.global_player_profiles[member.id] = {
+                        "class": class_type,
+                        "attributes": attributes,
+                        "race": race,
+                        "stats": {
+                            "wins": 0,
+                            "losses": 0,
+                            "total_battles": 0,
+                            "total_damage_dealt": 0,
+                            "total_damage_taken": 0,
+                            "critical_hits": 0,
+                            "critical_wins": 0,
+                            "bots_beaten": 0,
+                            "losses_to_bots": 0,
+                            "monthly_trophies": 0,
+                            "quarterly_trophies": 0
+                        },
+                        "level": 100,
+                        "xp": 10000,
+                        "teamwork_xp": 5000,
+                        "class_mastery_xp": 2000,
+                        "class_mastery_title": "Grand Master",
+                        "attribute_mastery_xp": {attr: 2000 for attr in attributes},
+                        "attribute_mastery_titles": {attr: "Grand Master" for attr in attributes},
+                        "counterance_xp": {},
+                        "battle_tokens": {str(guild.id): 20},
+                        "race_effects": race_effects,
+                        "race_color": race_color,
+                        "is_bot": True,
+                        "has_been_beaten": {}
+                    }
                 else:
                     class_type = random.choice([c for c in CLASS_STATS.keys() if c != "Omega Fury"])
                     attributes = random.sample(PRIMARY_ATTRIBUTES, min(3, len(PRIMARY_ATTRIBUTES)))
                     race = f"BotRace_{member.id % 1000}"
                     race_color = random.choice(["red", "green", "blue", "#FF0000", "#00FF00", "#0000FF"])
-                    race_effects = generate_race_effects(race, race_color, class_type=class_type, attributes=attributes, is_bot=True)
-                bot.global_player_profiles[member.id] = {
-                    "class": class_type,
-                    "attributes": attributes,
-                    "race": race,
-                    "stats": {
-                        "wins": 0,
-                        "losses": 0,
-                        "total_battles": 0,
-                        "total_damage_dealt": 0,
-                        "total_damage_taken": 0,
-                        "critical_hits": 0,
-                        "critical_wins": 0,
-                        "bots_beaten": 0,
-                        "losses_to_bots": 0,
-                        "monthly_trophies": 0,
-                        "quarterly_trophies": 0
-                    },
-                    "level": 1,
-                    "xp": 0,
-                    "teamwork_xp": 0,
-                    "class_mastery_xp": 0,
-                    "class_mastery_title": "Novice",
-                    "attribute_mastery_xp": {attr: 0 for attr in attributes},
-                    "attribute_mastery_titles": {attr: "Novice" for attr in attributes},
-                    "counterance_xp": {},
-                    "battle_tokens": {str(guild.id): 3},
-                    "race_effects": race_effects,
-                    "race_color": race_color,
-                    "is_bot": True  # Add flag to identify bots
-                }
+                    race_effects = await generate_race_effects(race, race_color, class_type=class_type, attributes=attributes, is_bot=True)
+                    bot.global_player_profiles[member.id] = {
+                        "class": class_type,
+                        "attributes": attributes,
+                        "race": race,
+                        "stats": {
+                            "wins": 0,
+                            "losses": 0,
+                            "total_battles": 0,
+                            "total_damage_dealt": 0,
+                            "total_damage_taken": 0,
+                            "critical_hits": 0,
+                            "critical_wins": 0,
+                            "bots_beaten": 0,
+                            "losses_to_bots": 0,
+                            "monthly_trophies": 0,
+                            "quarterly_trophies": 0
+                        },
+                        "level": 1,
+                        "xp": 0,
+                        "teamwork_xp": 0,
+                        "class_mastery_xp": 0,
+                        "class_mastery_title": "Novice",
+                        "attribute_mastery_xp": {attr: 0 for attr in attributes},
+                        "attribute_mastery_titles": {attr: "Novice" for attr in attributes},
+                        "counterance_xp": {},
+                        "battle_tokens": {str(guild.id): 3},
+                        "race_effects": race_effects,
+                        "race_color": race_color,
+                        "is_bot": True
+                    }
                 # Assign class role
                 class_role = discord.utils.get(guild.roles, name=class_type)
                 if not class_role:
@@ -549,12 +580,15 @@ async def on_reaction_add(bot, reaction: discord.Reaction, user: discord.User):
 async def update_stats_embed(bot, guild, user_id, embed=None):
     member = guild.get_member(user_id)
     if not member:
+        print(f"Member {user_id} not found in guild {guild.name}")
         return
     profile = bot.global_player_profiles.get(user_id, {})
     if not profile:
+        print(f"Profile for user {user_id} not found")
         return
     channel = discord.utils.get(guild.text_channels, name=CHANNEL_CONFIGS["stats_channel"].lstrip('#'))
     if not channel:
+        print(f"Stats channel not found in guild {guild.name}")
         return
 
     # Calculate leaderboard stats (exclude bots)
