@@ -139,43 +139,44 @@ class Player:
     def heal(self, amount: int):
         self.hp = min(self.max_hp, self.hp + amount)
 
-   def generate_race_effects(race_name: str, color: str, class_type: str = None, attributes: List[str] = None) -> Dict:
-       """Generate race effects based on attributes."""
-       effects = []
-       power_index = 0
+def generate_race_effects(race_name: str, color: str, class_type: str = None, attributes: List[str] = None) -> Dict:
+    """Generate race effects based on attributes."""
+    effects = []
+    power_index = 0
 
-       # Select up to 2 effects from attributes (buffs, debuffs, dual buffs)
-       if attributes:
-           attr_effects = []
-           for attr in attributes:
-               if attr in ATTRIBUTE_EFFECTS:
-                   attr_pools = [ATTRIBUTE_EFFECTS[attr]["buffs"], ATTRIBUTE_EFFECTS[attr]["debuffs"], ATTRIBUTE_EFFECTS[attr]["dual_buffs"]]
-                   all_attr_effects = [effect for pool in attr_pools for effect in pool]
-                   if all_attr_effects:
-                       attr_effects.append(random.choice(all_attr_effects))
-           if len(attr_effects) > 1:
-               selected_attr_effects = random.sample(attr_effects, 2)
-           elif attr_effects:
-               selected_attr_effects = [attr_effects[0]]
-           else:
-               selected_attr_effects = []
-           effects.extend(selected_attr_effects)
-           power_index += 5 if any(e["type"] == "normal" for e in selected_attr_effects) else 10
+    # Select up to 2 effects from attributes (buffs, debuffs, dual buffs)
+    if attributes:
+        attr_effects = []
+        for attr in attributes:
+            if attr in ATTRIBUTE_EFFECTS:
+                attr_pools = [ATTRIBUTE_EFFECTS[attr]["buffs"], ATTRIBUTE_EFFECTS[attr]["debuffs"], ATTRIBUTE_EFFECTS[attr]["dual_buffs"]]
+                all_attr_effects = [effect for pool in attr_pools for effect in pool]
+                if all_attr_effects:
+                    attr_effects.append(random.choice(all_attr_effects))
+        if len(attr_effects) > 1:
+            selected_attr_effects = random.sample(attr_effects, 2)
+        elif attr_effects:
+            selected_attr_effects = [attr_effects[0]]
+        else:
+            selected_attr_effects = []
+        effects.extend(selected_attr_effects)
+        power_index += 5 if any(e["type"] == "normal" for e in selected_attr_effects) else 10
 
-       # Fill remaining slots (up to 4 effects) with random effects
-       while len(effects) < 4:
-           effect_type = random.choice(["buff", "debuff", "dual"])
-           if effect_type == "buff":
-               effect = {"name": f"{race_name} Boost", "value": f"+{random.randint(5, 15)} {random.choice(['Attack', 'Defense', 'Speed', 'HP'])}", "type": "normal"}
-           elif effect_type == "debuff":
-               effect = {"name": f"{race_name} Weakness", "value": f"-{random.randint(5, 10)} {random.choice(['Attack', 'Defense', 'Speed', 'HP'])}", "type": "normal"}
-           else:  # dual
-               element = random.choice(['Fire', 'Water', 'Ice', 'Electric', 'Earth', 'Nature', 'Metal', 'Air', 'Light', 'Shadow', 'Life', 'Death'])
-               effect = {"name": f"{race_name} Power", "value": f"+{random.randint(20, 35)}% {element} Damage", "type": "dual", "weakness": random.choice(['Fire', 'Water', 'Ice', 'Electric', 'Earth', 'Nature', 'Metal', 'Air', 'Light', 'Shadow', 'Life', 'Death']), "strength": element}
-           if effect["name"] not in [e["name"] for e in effects]:
-               effects.append(effect)
-               power_index += 5 if effect["type"] == "normal" else 10
+    # Fill remaining slots (up to 4 effects) with random effects
+    while len(effects) < 4:
+        effect_type = random.choice(["buff", "debuff", "dual"])
+        if effect_type == "buff":
+            effect = {"name": f"{race_name} Boost", "value": f"+{random.randint(5, 15)} {random.choice(['Attack', 'Defense', 'Speed', 'HP'])}", "type": "normal"}
+        elif effect_type == "debuff":
+            effect = {"name": f"{race_name} Weakness", "value": f"-{random.randint(5, 10)} {random.choice(['Attack', 'Defense', 'Speed', 'HP'])}", "type": "normal"}
+        else:  # dual
+            element = random.choice(['Fire', 'Water', 'Ice', 'Electric', 'Earth', 'Nature', 'Metal', 'Air', 'Light', 'Shadow', 'Life', 'Death'])
+            effect = {"name": f"{race_name} Power", "value": f"+{random.randint(20, 35)}% {element} Damage", "type": "dual", "weakness": random.choice(['Fire', 'Water', 'Ice', 'Electric', 'Earth', 'Nature', 'Metal', 'Air', 'Light', 'Shadow', 'Life', 'Death']), "strength": element}
+        if effect["name"] not in [e["name"] for e in effects]:
+            effects.append(effect)
+            power_index += 5 if effect["type"] == "normal" else 10
 
-       power_index = min(power_index, 50)  # Cap power index at 50%
-       print(f"Generated race effects for {race_name} with color {color} (class: {class_type}, attrs: {attributes}): {effects}, power_index: {power_index}")
-       return {"effects": effects, "power_index": power_index}
+    power_index = min(power_index, 50)  # Cap power index at 50%
+    print(f"Generated race effects for {race_name} with color {color} (class: {class_type}, attrs: {attributes}): {effects}, power_index: {power_index}")
+    return {"effects": effects, "power_index": power_index}
+

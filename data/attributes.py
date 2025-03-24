@@ -1,100 +1,123 @@
 # data/attributes.py
 
+# Primary attributes available for selection
 PRIMARY_ATTRIBUTES = [
     "Fire", "Water", "Ice", "Electric", "Earth", "Nature",
     "Metal", "Air", "Light", "Shadow", "Life", "Death"
 ]
 
+# Emoji mapping for attributes
 attribute_emojis = {
-    "🔥": "Fire",
-    "💧": "Water",
-    "❄️": "Ice",
-    "⚡": "Electric",
-    "🌍": "Earth",
-    "🌿": "Nature",
-    "🔩": "Metal",
-    "💨": "Air",
-    "✨": "Light",
-    "🌑": "Shadow",
-    "💖": "Life",
-    "💀": "Death"
+    "Fire": "🔥",
+    "Water": "💧",
+    "Ice": "❄️",
+    "Electric": "⚡",
+    "Earth": "🌍",
+    "Nature": "🌿",
+    "Metal": "🔩",
+    "Air": "💨",
+    "Light": "✨",
+    "Shadow": "🌑",
+    "Life": "💖",
+    "Death": "💀"
 }
 
-attribute_emoji_fallbacks = {
-    "Fire": "fire",
-    "Water": "droplet",
-    "Ice": "snowflake",
-    "Electric": "zap",
-    "Earth": "earth_africa",
-    "Nature": "herb",
-    "Metal": "nut_and_bolt",
-    "Air": "dash",
-    "Light": "sparkles",
-    "Shadow": "new_moon",
-    "Life": "sparkling_heart",
-    "Death": "skull"
-}
+# Fallback for attribute emojis
+attribute_emoji_fallbacks = {attr: attr.lower() for attr in PRIMARY_ATTRIBUTES}
 
+# Attribute-specific attacks
 ATTRIBUTE_ATTACKS = {
     "Fire": [
-        {"name": "Fire Blast", "damage_range": (15, 25), "effect": "Set your enemies ablaze and dominate the battlefield with this heated firepower!"},
-        {"name": "Inferno Sweep", "damage_range": (10, 20), "effect": "Unleash a searing wave to scorch your foes and claim victory through flames!"},
-        {"name": "Blazing Strike", "damage_range": (12, 22), "effect": "Ignite the skies with a fiery assault that overwhelms your adversaries!"}
+        {"name": "Fireball", "damage_range": (15, 25), "effect": "A blazing fireball"},
+        {"name": "Flame Burst", "damage_range": (10, 20), "effect": "A burst of flames"},
+        {"name": "Inferno Strike", "damage_range": (12, 22), "effect": "A fiery slash"}
     ],
     "Water": [
-        {"name": "Tidal Wave", "damage_range": (12, 22), "effect": "Command the tides to overwhelm your enemies with the power of the deep!"},
-        {"name": "Aqua Jet", "damage_range": (10, 20), "effect": "Ride the currents with swift precision to outmaneuver your rivals!"},
-        {"name": "Hydro Burst", "damage_range": (15, 25), "effect": "Flood the battlefield with a torrent that bends nature to your will!"}
-    ],
-    "Ice": [
-        {"name": "Frostbite Slash", "damage_range": (10, 20), "effect": "Freeze your foes in their tracks with the chilling might of ice!"},
-        {"name": "Glacial Spike", "damage_range": (15, 25), "effect": "Pierce the heart of battle with a frozen lance of icy power!"},
-        {"name": "Blizzard Blast", "damage_range": (12, 22), "effect": "Summon a storm of frost to paralyze your enemies with cold fury!"}
-    ],
-    "Electric": [
-        {"name": "Thunderbolt", "damage_range": (15, 25), "effect": "Strike with the fury of a storm and electrify the battlefield!"},
-        {"name": "Shock Pulse", "damage_range": (10, 20), "effect": "Channel a surge of energy to outpace and outlast your foes!"},
-        {"name": "Lightning Strike", "damage_range": (12, 22), "effect": "Unleash a bolt from the heavens to command the skies in combat!"}
-    ],
-    "Earth": [
-        {"name": "Quake Slam", "damage_range": (12, 22), "effect": "Shake the ground and assert dominance with the strength of the earth!"},
-        {"name": "Boulder Toss", "damage_range": (15, 25), "effect": "Hurl the weight of mountains to crush your enemies with raw power!"},
-        {"name": "Stone Surge", "damage_range": (10, 20), "effect": "Rise like a titan with the unyielding force of the land!"}
-    ],
-    "Nature": [
-        {"name": "Vine Whip", "damage_range": (10, 20), "effect": "Entwine your foes with the wild embrace of nature’s wrath!"},
-        {"name": "Petal Storm", "damage_range": (12, 22), "effect": "Unleash a whirlwind of blossoms to dazzle and conquer your rivals!"},
-        {"name": "Thorn Barrage", "damage_range": (15, 25), "effect": "Pierce the battlefield with nature’s thorns and claim your victory!"}
-    ],
-    "Metal": [
-        {"name": "Steel Slash", "damage_range": (15, 25), "effect": "Forge a path to glory with the unyielding edge of steel!"},
-        {"name": "Iron Bash", "damage_range": (12, 22), "effect": "Smash through defenses with the might of forged iron!"},
-        {"name": "Alloy Burst", "damage_range": (10, 20), "effect": "Explode with metallic fury to overwhelm your adversaries!"}
+        {"name": "Aqua Shot", "damage_range": (15, 25), "effect": "A precise water shot"},
+        {"name": "Wave Crash", "damage_range": (10, 20), "effect": "A crashing wave"},
+        {"name": "Hydro Blast", "damage_range": (12, 22), "effect": "A high-pressure blast"}
     ],
     "Air": [
-        {"name": "Gale Force", "damage_range": (12, 22), "effect": "Ride the winds to strike with unmatched speed and grace!"},
-        {"name": "Tornado Spin", "damage_range": (15, 25), "effect": "Whirl through the battlefield with a tempest of power!"},
-        {"name": "Wind Slash", "damage_range": (10, 20), "effect": "Slice through the air to dominate with aerial mastery!"}
-    ],
-    "Light": [
-        {"name": "Divine Light", "damage_range": (15, 25), "effect": "Radiate with holy brilliance to blind and conquer your foes!"},
-        {"name": "Radiant Beam", "damage_range": (12, 22), "effect": "Channel a beam of light to inspire victory on the battlefield!"},
-        {"name": "Luminous Pulse", "damage_range": (10, 20), "effect": "Illuminate the fight with a surge of radiant power!"}
-    ],
-    "Shadow": [
-        {"name": "Dark Pulse", "damage_range": (15, 25), "effect": "Weave shadows to weaken your enemies with eerie precision!"},
-        {"name": "Night Slash", "damage_range": (12, 22), "effect": "Strike from the darkness with a blade of night!"},
-        {"name": "Umbral Strike", "damage_range": (10, 20), "effect": "Embrace the shadows to outmaneuver and overpower your rivals!"}
+        {"name": "Wind Slash", "damage_range": (15, 25), "effect": "A cutting wind blade"},
+        {"name": "Gale Force", "damage_range": (10, 20), "effect": "A forceful gust"},
+        {"name": "Air Vortex", "damage_range": (12, 22), "effect": "A spinning air attack"}
     ],
     "Life": [
-        {"name": "Healing Touch", "damage_range": (5, 15), "effect": "Infuse the battlefield with vitality and renew your strength!"},
-        {"name": "Vital Surge", "damage_range": (10, 20), "effect": "Awaken a surge of life to bolster your defenses!"},
-        {"name": "Bloom Burst", "damage_range": (12, 22), "effect": "Blossom with life energy to turn the tide of battle!"}
-    ],
-    "Death": [
-        {"name": "Necrotic Grasp", "damage_range": (15, 25), "effect": "Harness the chill of death to command the battlefield!"},
-        {"name": "Grave Chill", "damage_range": (12, 22), "effect": "Spread a cold shadow to sap the will of your foes!"},
-        {"name": "Deathly Strike", "damage_range": (10, 20), "effect": "Strike with the inevitability of death to claim victory!"}
+        {"name": "Healing Pulse", "damage_range": (15, 25), "effect": "A life-infused strike"},
+        {"name": "Vital Strike", "damage_range": (10, 20), "effect": "A vitality boost attack"},
+        {"name": "Regen Slash", "damage_range": (12, 22), "effect": "A regenerating cut"}
     ]
 }
 
+# Announcements for attribute selection
+ATTRIBUTE_ANNOUNCEMENTS = {
+    "Fire": [
+        "{player} ignites their power with the {attribute} attribute!",
+        "Feel the heat! {player} harnesses the {attribute} attribute!",
+        "{player} blazes a trail with the {attribute} attribute!"
+    ],
+    "Water": [
+        "{player} flows with the power of the {attribute} attribute!",
+        "A tidal surge! {player} channels the {attribute} attribute!",
+        "{player} dives deep with the {attribute} attribute!"
+    ],
+    "Ice": [
+        "{player} chills the battlefield with the {attribute} attribute!",
+        "A frosty edge! {player} wields the {attribute} attribute!",
+        "{player} freezes foes with the {attribute} attribute!"
+    ],
+    "Electric": [
+        "{player} shocks all with the {attribute} attribute!",
+        "A charged strike! {player} uses the {attribute} attribute!",
+        "{player} electrifies the fight with the {attribute} attribute!"
+    ],
+    "Earth": [
+        "{player} stands firm with the {attribute} attribute!",
+        "A solid foundation! {player} gains the {attribute} attribute!",
+        "{player} shakes the ground with the {attribute} attribute!"
+    ],
+    "Nature": [
+        "{player} blooms with the {attribute} attribute!",
+        "A natural force! {player} harnesses the {attribute} attribute!",
+        "{player} grows strong with the {attribute} attribute!"
+    ],
+    "Metal": [
+        "{player} forges ahead with the {attribute} attribute!",
+        "A steel resolve! {player} wields the {attribute} attribute!",
+        "{player} shines with the {attribute} attribute!"
+    ],
+    "Air": [
+        "{player} soars with the {attribute} attribute!",
+        "A breezy advantage! {player} channels the {attribute} attribute!",
+        "{player} sweeps in with the {attribute} attribute!"
+    ],
+    "Light": [
+        "{player} radiates with the {attribute} attribute!",
+        "A brilliant glow! {player} harnesses the {attribute} attribute!",
+        "{player} shines bright with the {attribute} attribute!"
+    ],
+    "Shadow": [
+        "{player} cloaks in the {attribute} attribute!",
+        "A dark presence! {player} uses the {attribute} attribute!",
+        "{player} lurks with the {attribute} attribute!"
+    ],
+    "Life": [
+        "{player} thrives with the {attribute} attribute!",
+        "A vital surge! {player} channels the {attribute} attribute!",
+        "{player} pulses with the {attribute} attribute!"
+    ],
+    "Death": [
+        "{player} reaps with the {attribute} attribute!",
+        "A grim power! {player} wields the {attribute} attribute!",
+        "{player} brings doom with the {attribute} attribute!"
+    ]
+}
+
+# Flair messages for announcements
+FLAIR = [
+    "✨ Epic choice!",
+    "🔥 Ready to dominate!",
+    "⚡ Power unleashed!",
+    "🌟 A new legend rises!",
+    "💥 Let’s battle!"
+]

@@ -51,7 +51,7 @@ async def on_ready(bot):
             # Class Selection Embed
             class_embed = discord.Embed(title="Class Selection", description="Choose your class by reacting to this message!", color=discord.Color.gold())
             for class_name, stats in CLASS_STATS.items():
-                class_embed.add_field(name=f"{stats['emoji']} {class_name}", value=stats["description"], inline=True)
+                class_embed.add_field(name=f"{stats['emoji']} {class_name}", value=f"{stats['description']}\nHP: {stats['hp']}, Attack: {stats['attack']}, Defense: {stats['defense']}, Speed: {stats['speed']}", inline=True)
             class_message = await class_channel.send(embed=class_embed)
             bot.class_selection_message[guild.id] = class_message.id
             print(f"Sent Class Selection embed to {class_channel.name} (Message ID: {class_message.id})")
@@ -79,7 +79,7 @@ async def on_ready(bot):
                     print(f"Missing permissions to add reaction {emoji} to Attribute Selection message")
 
             # Race Selection Embed
-            race_embed = discord.Embed(title="Race Selection", description="Use `/enter_race` to set your race!", color=discord.Color.green())
+            race_embed = discord.Embed(title="Race Selection", description="Set your race using `/enter_race name:<your_race> color:<color>` (e.g., `/enter_race name:Arcturan color:0000FF`).\nYour race determines unique buffs and a custom role color!", color=discord.Color.green())
             race_message = await class_channel.send(embed=race_embed)
             bot.race_selection_message[guild.id] = race_message.id
             print(f"Sent Race Selection embed to {class_channel.name} (Message ID: {race_message.id})")
@@ -106,7 +106,8 @@ async def initialize_bot_profiles(bot):
                 class_type = random.choice(list(CLASS_STATS.keys()))
                 attributes = random.sample(PRIMARY_ATTRIBUTES, min(3, len(PRIMARY_ATTRIBUTES)))
                 race = f"BotRace_{member.id % 1000}"
-                race_effects = generate_race_effects(race, random.choice(["red", "green", "blue"]), class_type=class_type, attributes=attributes)
+                race_color = random.choice(["red", "green", "blue", "#FF0000", "#00FF00", "#0000FF"])
+                race_effects = generate_race_effects(race, race_color, class_type=class_type, attributes=attributes)
                 bot.global_player_profiles[member.id] = {
                     "class": class_type,
                     "attributes": attributes,
@@ -124,8 +125,72 @@ async def initialize_bot_profiles(bot):
                     },
                     "level": 1,
                     "xp": 0,
-                    "race_effects": race_effects
+                    "race_effects": race_effects,
+                    "race_color": race_color
                 }
+                # Assign class role
+                class_role = discord.utils.get(guild.roles, name=class_type)
+                if not class_role:
+                    try:
+                        class_role = await guild.create_role(name=class_type)
+                        print(f"Created class role {class_type} in {guild.name}")
+                    except discord.Forbidden:
+                        print(f"Missing permissions to create class role {class_type} in {guild.name}")
+                if class_role and class_role not in member.roles:
+                    try:
+                        await member.add_roles(class_role)
+                        print(f"Assigned class role {class_type} to bot {member.name}")
+                    except discord.Forbidden:
+                        print(f"Failed to assign class role {class_type} to bot {member.name} - missing permissions")
+
+                # Assign attribute roles
+                for attr in attributes:
+                    attr_role = discord.utils.get(guild.roles, name=attr)
+                    if not attr_role:
+                        try:
+                            attr_role = await guild.create_role(name=attr)
+                            print(f"Created attribute role {attr} in {guild.name}")
+                        except discord.Forbidden:
+                            print(f"Missing permissions to create attribute role {attr} in {guild.name}")
+                    if attr_role and attr_role not in member.roles:
+                        try:
+                            await member.add_roles(attr_role)
+                            print(f"Assigned attribute role {attr} to bot {member.name}")
+                        except discord.Forbidden:
+                            print(f"Failed to assign attribute role {attr} to bot {member.name} - missing permissions")
+
+                # Assign race role with color
+                race_role = discord.utils.get(guild.roles, name=race)
+                if not race_role:
+                    try:
+                        hex_color = race_color
+                        if not race_color.startswith("#"):
+                            color_map = {
+                                "red": "#FF0000",
+                                "green": "#00FF00",
+                                "blue": "#0000FF",
+                                "white": "#FFFFFF",
+                                "black": "#000000",
+                                "yellow": "#FFFF00",
+                                "purple": "#800080",
+                                "orange": "#FFA500",
+                                "pink": "#FFC0CB",
+                                "cyan": "#00FFFF"
+                            }
+                            hex_color = color_map.get(race_color.lower(), "#FFFFFF")
+                            if len(race_color) == 6 and all(c in '0123456789ABCDEFabcdef' for c in race_color):
+                                hex_color = f"#{race_color}"
+                        race_role = await guild.create_role(name=race, color=discord.Color.from_str(hex_color))
+                        print(f"Created race role {race} with color {hex_color} in {guild.name}")
+                    except (discord.Forbidden, ValueError) as e:
+                        print(f"Failed to create race role {race} for bot {member.name}: {e}")
+                if race_role and race_role not in member.roles:
+                    try:
+                        await member.add_roles(race_role)
+                        print(f"Assigned race role {race} to bot {member.name}")
+                    except discord.Forbidden:
+                        print(f"Failed to assign race role {race} to bot {member.name} - missing permissions")
+
                 print(f"Assigned {class_type} with attributes {attributes}, race {race} to bot {member.name}")
                 await update_stats_embed(bot, guild, member.id)
 
@@ -459,12 +524,20 @@ async def update_stats_embed(bot, guild, user_id):
     channel = discord.utils.get(guild.text_channels, name=CHANNEL_CONFIGS["stats_channel"].lstrip('#'))
     if not channel:
         return
-    race_effects = ", ".join([f"{effect['name']}: {effect['value']}" for effect in profile.get("race_effects", {}).get("effects", [])]) or "None"
-    embed = discord.Embed(title=f"{member.display_name}'s Stats", color=discord.Color.gold())
+    # Format race effects with details
+    race_effects = profile.get("race_effects", {}).get("effects", [])
+    race_effects_display = "\n".join([f"{effect['name']}: {effect['value']}" + (f" (Weakness: {effect['weakness']}, Strength: {effect['strength']})" if effect.get("type") == "dual" else "") for effect in race_effects]) or "None"
+    # Determine embed color based on race color (if available)
+    race_color = profile.get("race_color", "#FFD700")  # Default to gold if no race color
+    try:
+        embed_color = discord.Color.from_str(race_color)
+    except ValueError:
+        embed_color = discord.Color.gold()  # Fallback to gold if invalid color
+    embed = discord.Embed(title=f"{member.display_name}'s Stats", color=embed_color)
     embed.add_field(name="Class", value=profile.get("class", "None"), inline=True)
     embed.add_field(name="Attributes", value=", ".join(profile.get("attributes", [])) if profile.get("attributes") else "None", inline=True)
     embed.add_field(name="Race", value=profile.get("race", "None"), inline=True)
-    embed.add_field(name="Race Effects", value=race_effects, inline=False)
+    embed.add_field(name="Race Effects", value=race_effects_display, inline=False)
     embed.add_field(name="Level", value=profile.get("level", 1), inline=True)
     embed.add_field(name="Wins/Losses", value=f"{profile.get('stats', {}).get('wins', 0)}/{profile.get('stats', {}).get('losses', 0)}", inline=True)
     embed.add_field(name="Total Battles", value=profile.get("stats", {}).get("total_battles", 0), inline=True)
