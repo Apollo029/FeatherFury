@@ -577,19 +577,25 @@ async def on_reaction_add(bot, reaction: discord.Reaction, user: discord.User):
             except discord.Forbidden:
                 print(f"Failed to remove duplicate attribute reaction - missing permissions")
 
-async def update_stats_embed(bot, guild, user_id, embed=None):
+async def update_stats_embed(bot, guild, user_id, embed=None, interaction=None):
     member = guild.get_member(user_id)
     if not member:
         print(f"Member {user_id} not found in guild {guild.name}")
+        if interaction:
+            await interaction.followup.send(f"Member with ID {user_id} not found in the server!")
         return
     profile = bot.global_player_profiles.get(user_id, {})
     if not profile:
         print(f"Profile for user {user_id} not found")
+        if interaction:
+            await interaction.followup.send(f"Profile for user with ID {user_id} not found!")
         return
     print(f"Profile for {member.display_name} (ID: {user_id}): {profile}")
     channel = discord.utils.get(guild.text_channels, name=CHANNEL_CONFIGS["stats_channel"].lstrip('#'))
     if not channel:
         print(f"Stats channel not found in guild {guild.name}")
+        if interaction:
+            await interaction.followup.send(f"Stats channel not found in the server!")
         return
 
     # Calculate leaderboard stats (exclude bots)
@@ -630,68 +636,72 @@ async def update_stats_embed(bot, guild, user_id, embed=None):
             lowest_stats[stat_name] = stat_func(sorted_profiles[-1])
 
     # Create or update the embed
-    if embed is None:
-        race_effects = profile.get("race_effects", {}).get("effects", [])
-        race_effects_display = "\n".join([
-            f"{effect['name']}: {effect['value']}" + 
-            (f" (Weakness: {effect['weakness']}, Strength: {effect['strength']})" if effect.get("type") == "dual" else "")
-            for effect in race_effects
-        ]) or "None"
-        race_color = profile.get("race_color", "#FFD700")
-        try:
-            embed_color = discord.Color.from_str(race_color)
-        except ValueError:
-            embed_color = discord.Color.gold()
-        embed = discord.Embed(title=f"{member.display_name}'s Stats", color=embed_color)
-        embed.add_field(name="Class", value=profile.get("class", "None"), inline=True)
-        embed.add_field(name="Attributes", value=", ".join(profile.get("attributes", [])) if profile.get("attributes") else "None", inline=True)
-        embed.add_field(name="Race", value=profile.get("race", "None"), inline=True)
-        embed.add_field(name="Race Effects", value=race_effects_display, inline=False)
-        embed.add_field(name="Level", value=profile.get("level", 1), inline=True)
-        wins = profile.get("stats", {}).get("wins", 0)
-        wins_display = f"{wins} {'👑' if wins == highest_stats['Wins (Players)'] and not profile.get('is_bot', False) else '😢' if wins == lowest_stats['Wins (Players)'] and not profile.get('is_bot', False) else ''}"
-        bots_beaten = profile.get("stats", {}).get("bots_beaten", 0)
-        bots_beaten_display = f"{bots_beaten} {'👑' if bots_beaten == highest_stats['Wins (Bots)'] and not profile.get('is_bot', False) else '😢' if bots_beaten == lowest_stats['Wins (Bots)'] and not profile.get('is_bot', False) else ''}"
-        embed.add_field(name="Wins (Players/Bots)", value=f"{wins_display}/{bots_beaten_display}", inline=True)
-        total_battles = profile.get("stats", {}).get("total_battles", 0)
-        total_battles_display = f"{total_battles} {'👑' if total_battles == highest_stats['Total Battles'] and not profile.get('is_bot', False) else '😢' if total_battles == lowest_stats['Total Battles'] and not profile.get('is_bot', False) else ''}"
-        embed.add_field(name="Total Battles", value=total_battles_display, inline=True)
-        damage_dealt = profile.get("stats", {}).get("total_damage_dealt", 0)
-        damage_dealt_display = f"{damage_dealt} {'👑' if damage_dealt == highest_stats['Damage Dealt'] and not profile.get('is_bot', False) else '😢' if damage_dealt == lowest_stats['Damage Dealt'] and not profile.get('is_bot', False) else ''}"
-        embed.add_field(name="Damage Dealt", value=damage_dealt_display, inline=True)
-        damage_taken = profile.get("stats", {}).get("total_damage_taken", 0)
-        damage_taken_display = f"{damage_taken} {'👑' if damage_taken == highest_stats['Damage Taken'] and not profile.get('is_bot', False) else '😢' if damage_taken == lowest_stats['Damage Taken'] and not profile.get('is_bot', False) else ''}"
-        embed.add_field(name="Damage Taken", value=damage_taken_display, inline=True)
-        critical_hits = profile.get("stats", {}).get("critical_hits", 0)
-        critical_hits_display = f"{critical_hits} {'👑' if critical_hits == highest_stats['Critical Hits'] and not profile.get('is_bot', False) else '😢' if critical_hits == lowest_stats['Critical Hits'] and not profile.get('is_bot', False) else ''}"
-        embed.add_field(name="Critical Hits", value=critical_hits_display, inline=True)
-        monthly_trophies = profile.get("stats", {}).get("monthly_trophies", 0)
-        quarterly_trophies = profile.get("stats", {}).get("quarterly_trophies", 0)
-        monthly_trophies_display = f"{monthly_trophies} {'👑' if monthly_trophies == highest_stats['Monthly Trophies'] and not profile.get('is_bot', False) else '😢' if monthly_trophies == lowest_stats['Monthly Trophies'] and not profile.get('is_bot', False) else ''}"
-        quarterly_trophies_display = f"{quarterly_trophies} {'👑' if quarterly_trophies == highest_stats['Quarterly Trophies'] and not profile.get('is_bot', False) else '😢' if quarterly_trophies == lowest_stats['Quarterly Trophies'] and not profile.get('is_bot', False) else ''}"
-        embed.add_field(name="Trophies (Monthly/Quarterly)", value=f"{monthly_trophies_display}/{quarterly_trophies_display}", inline=True)
-        battle_tokens = profile.get("battle_tokens", {}).get(str(guild.id), 3)
-        embed.add_field(name="Battle Tokens", value=battle_tokens, inline=True)
-        xp = profile.get("xp", 0)
-        xp_display = f"{xp} {'👑' if xp == highest_stats['XP'] and not profile.get('is_bot', False) else '😢' if xp == lowest_stats['XP'] and not profile.get('is_bot', False) else ''}"
-        embed.add_field(name="XP", value=xp_display, inline=True)
-        teamwork_xp = profile.get("teamwork_xp", 0)
-        teamwork_xp_display = f"{teamwork_xp} {'👑' if teamwork_xp == highest_stats['Teamwork XP'] and not profile.get('is_bot', False) else '😢' if teamwork_xp == lowest_stats['Teamwork XP'] and not profile.get('is_bot', False) else ''}"
-        embed.add_field(name="Teamwork XP", value=teamwork_xp_display, inline=True)
-        class_mastery = f"{profile.get('class_mastery_title', 'Novice')} ({profile.get('class_mastery_xp', 0)} XP)"
-        embed.add_field(name=f"{profile.get('class', 'None')} Mastery", value=class_mastery, inline=True)
-        # Consolidate attribute mastery fields for bots with many attributes
-        if profile.get("is_bot", False) and len(profile.get("attributes", [])) > 5:
-            attr_mastery_display = "\n".join([
-                f"{attr}: {profile.get('attribute_mastery_titles', {}).get(attr, 'Novice')} ({profile.get('attribute_mastery_xp', {}).get(attr, 0)} XP)"
-                for attr in profile.get("attributes", [])
-            ])
-            embed.add_field(name="Attribute Mastery", value=attr_mastery_display or "None", inline=False)
-        else:
-            for attr in profile.get("attributes", []):
-                attr_mastery = f"{profile.get('attribute_mastery_titles', {}).get(attr, 'Novice')} ({profile.get('attribute_mastery_xp', {}).get(attr, 0)} XP)"
-                embed.add_field(name=f"{attr} Mastery", value=attr_mastery, inline=True)
+    race_effects = profile.get("race_effects", {}).get("effects", [])
+    race_effects_display = "\n".join([
+        f"{effect['name']}: {effect['value']}" + 
+        (f" (Weakness: {effect['weakness']}, Strength: {effect['strength']})" if effect.get("type") == "dual" else "")
+        for effect in race_effects
+    ]) or "None"
+    race_color = profile.get("race_color", "#FFD700")
+    try:
+        embed_color = discord.Color.from_str(race_color)
+    except ValueError:
+        embed_color = discord.Color.gold()
+    embed = discord.Embed(title=f"{member.display_name}'s Stats", color=embed_color)
+    embed.add_field(name="Class", value=profile.get("class", "None"), inline=True)
+    embed.add_field(name="Attributes", value=", ".join(profile.get("attributes", [])) if profile.get("attributes") else "None", inline=True)
+    embed.add_field(name="Race", value=profile.get("race", "None"), inline=True)
+    embed.add_field(name="Race Effects", value=race_effects_display, inline=False)
+    embed.add_field(name="Level", value=profile.get("level", 1), inline=True)
+    wins = profile.get("stats", {}).get("wins", 0)
+    wins_display = f"{wins} {'👑' if wins == highest_stats['Wins (Players)'] and not profile.get('is_bot', False) else '😢' if wins == lowest_stats['Wins (Players)'] and not profile.get('is_bot', False) else ''}"
+    bots_beaten = profile.get("stats", {}).get("bots_beaten", 0)
+    bots_beaten_display = f"{bots_beaten} {'👑' if bots_beaten == highest_stats['Wins (Bots)'] and not profile.get('is_bot', False) else '😢' if bots_beaten == lowest_stats['Wins (Bots)'] and not profile.get('is_bot', False) else ''}"
+    embed.add_field(name="Wins (Players/Bots)", value=f"{wins_display}/{bots_beaten_display}", inline=True)
+    total_battles = profile.get("stats", {}).get("total_battles", 0)
+    total_battles_display = f"{total_battles} {'👑' if total_battles == highest_stats['Total Battles'] and not profile.get('is_bot', False) else '😢' if total_battles == lowest_stats['Total Battles'] and not profile.get('is_bot', False) else ''}"
+    embed.add_field(name="Total Battles", value=total_battles_display, inline=True)
+    damage_dealt = profile.get("stats", {}).get("total_damage_dealt", 0)
+    damage_dealt_display = f"{damage_dealt} {'👑' if damage_dealt == highest_stats['Damage Dealt'] and not profile.get('is_bot', False) else '😢' if damage_dealt == lowest_stats['Damage Dealt'] and not profile.get('is_bot', False) else ''}"
+    embed.add_field(name="Damage Dealt", value=damage_dealt_display, inline=True)
+    damage_taken = profile.get("stats", {}).get("total_damage_taken", 0)
+    damage_taken_display = f"{damage_taken} {'👑' if damage_taken == highest_stats['Damage Taken'] and not profile.get('is_bot', False) else '😢' if damage_taken == lowest_stats['Damage Taken'] and not profile.get('is_bot', False) else ''}"
+    embed.add_field(name="Damage Taken", value=damage_taken_display, inline=True)
+    critical_hits = profile.get("stats", {}).get("critical_hits", 0)
+    critical_hits_display = f"{critical_hits} {'👑' if critical_hits == highest_stats['Critical Hits'] and not profile.get('is_bot', False) else '😢' if critical_hits == lowest_stats['Critical Hits'] and not profile.get('is_bot', False) else ''}"
+    embed.add_field(name="Critical Hits", value=critical_hits_display, inline=True)
+    monthly_trophies = profile.get("stats", {}).get("monthly_trophies", 0)
+    quarterly_trophies = profile.get("stats", {}).get("quarterly_trophies", 0)
+    monthly_trophies_display = f"{monthly_trophies} {'👑' if monthly_trophies == highest_stats['Monthly Trophies'] and not profile.get('is_bot', False) else '😢' if monthly_trophies == lowest_stats['Monthly Trophies'] and not profile.get('is_bot', False) else ''}"
+    quarterly_trophies_display = f"{quarterly_trophies} {'👑' if quarterly_trophies == highest_stats['Quarterly Trophies'] and not profile.get('is_bot', False) else '😢' if quarterly_trophies == lowest_stats['Quarterly Trophies'] and not profile.get('is_bot', False) else ''}"
+    embed.add_field(name="Trophies (Monthly/Quarterly)", value=f"{monthly_trophies_display}/{quarterly_trophies_display}", inline=True)
+    battle_tokens = profile.get("battle_tokens", {}).get(str(guild.id), 3)
+    embed.add_field(name="Battle Tokens", value=battle_tokens, inline=True)
+    xp = profile.get("xp", 0)
+    xp_display = f"{xp} {'👑' if xp == highest_stats['XP'] and not profile.get('is_bot', False) else '😢' if xp == lowest_stats['XP'] and not profile.get('is_bot', False) else ''}"
+    embed.add_field(name="XP", value=xp_display, inline=True)
+    teamwork_xp = profile.get("teamwork_xp", 0)
+    teamwork_xp_display = f"{teamwork_xp} {'👑' if teamwork_xp == highest_stats['Teamwork XP'] and not profile.get('is_bot', False) else '😢' if teamwork_xp == lowest_stats['Teamwork XP'] and not profile.get('is_bot', False) else ''}"
+    embed.add_field(name="Teamwork XP", value=teamwork_xp_display, inline=True)
+    class_mastery = f"{profile.get('class_mastery_title', 'Novice')} ({profile.get('class_mastery_xp', 0)} XP)"
+    embed.add_field(name=f"{profile.get('class', 'None')} Mastery", value=class_mastery, inline=True)
+    # Consolidate attribute mastery fields for bots with many attributes
+    if profile.get("is_bot", False) and len(profile.get("attributes", [])) > 5:
+        attr_mastery_display = "\n".join([
+            f"{attr}: {profile.get('attribute_mastery_titles', {}).get(attr, 'Novice')} ({profile.get('attribute_mastery_xp', {}).get(attr, 0)} XP)"
+            for attr in profile.get("attributes", [])
+        ])
+        embed.add_field(name="Attribute Mastery", value=attr_mastery_display or "None", inline=False)
+    else:
+        for attr in profile.get("attributes", []):
+            attr_mastery = f"{profile.get('attribute_mastery_titles', {}).get(attr, 'Novice')} ({profile.get('attribute_mastery_xp', {}).get(attr, 0)} XP)"
+            embed.add_field(name=f"{attr} Mastery", value=attr_mastery, inline=True)
 
+    # Send the embed to the user if called from a command
+    if interaction:
+        await interaction.followup.send(embed=embed)
+
+    # Always update the stats channel
     if user_id in bot.stats_message_ids.get(guild.id, {}):
         try:
             message = await channel.fetch_message(bot.stats_message_ids[guild.id][user_id])
