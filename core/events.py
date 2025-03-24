@@ -586,6 +586,7 @@ async def update_stats_embed(bot, guild, user_id, embed=None):
     if not profile:
         print(f"Profile for user {user_id} not found")
         return
+    print(f"Profile for {member.display_name} (ID: {user_id}): {profile}")
     channel = discord.utils.get(guild.text_channels, name=CHANNEL_CONFIGS["stats_channel"].lstrip('#'))
     if not channel:
         print(f"Stats channel not found in guild {guild.name}")
