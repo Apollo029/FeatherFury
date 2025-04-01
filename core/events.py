@@ -598,6 +598,22 @@ async def update_stats_embed(bot, guild, user_id, embed=None, interaction=None):
             await interaction.followup.send(f"Stats channel not found in the server!")
         return
 
+    # Check bot permissions in the stats channel
+    bot_member = guild.get_member(bot.user.id)
+    if not bot_member:
+        print(f"Bot not found in guild {guild.name}")
+        if interaction:
+            await interaction.followup.send(f"Bot not found in the server!")
+        return
+    channel_perms = channel.permissions_for(bot_member)
+    if not channel_perms.send_messages:
+        print(f"Bot lacks 'Send Messages' permission in stats channel {channel.name}")
+        if interaction:
+            await interaction.followup.send(f"I lack permission to send messages in the stats channel!")
+        return
+    if not channel_perms.manage_messages:
+        print(f"Bot lacks 'Manage Messages' permission in stats channel {channel.name}")
+
     # Calculate leaderboard stats (exclude bots)
     all_profiles = [p for uid, p in bot.global_player_profiles.items() if guild.get_member(uid) and not p.get("is_bot", False)]
     if not all_profiles:
@@ -717,37 +733,32 @@ async def update_stats_embed(bot, guild, user_id, embed=None, interaction=None):
     print(f"Created new stats embed for {member.display_name} (ID: {user_id}, Message ID: {message.id})")
 
 async def update_daily_quests(bot):
+    from datetime import datetime, timedelta
+    import pytz
+    from data.quests import generate_daily_quests
+
+    central_tz = pytz.timezone('America/Chicago')  # Central Time
     while True:
         now = datetime.now(pytz.UTC)
-        # Schedule for midnight UTC
-        next_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-        seconds_until_midnight = (next_midnight - now).total_seconds()
+        now_central = now.astimezone(central_tz)
+        next_midnight = now_central.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        seconds_until_midnight = (next_midnight - now_central).total_seconds()
         await asyncio.sleep(seconds_until_midnight)
+
+        # Generate new daily quests
+        quests = generate_daily_quests()
+        embed = discord.Embed(title="Daily Quests", color=discord.Color.purple())
+        for quest_type, details in quests.items():
+            embed.add_field(name=quest_type, value=details["description"], inline=False)
 
         for guild in bot.guilds:
             quest_channel = discord.utils.get(guild.text_channels, name=CHANNEL_CONFIGS["quest_channel"].lstrip('#'))
-            if not quest_channel:
+            if quest_channel:
                 try:
-                    quest_channel = await guild.create_text_channel(CHANNEL_CONFIGS["quest_channel"].lstrip('#'))
-                    print(f"Created quest channel {CHANNEL_CONFIGS['quest_channel']} in {guild.name}")
+                    async for message in quest_channel.history(limit=10):
+                        if message.author == bot.user and "Daily Quests" in message.embeds[0].title if message.embeds else False:
+                            await message.delete()
+                    await quest_channel.send(embed=embed)
                 except discord.Forbidden:
-                    print(f"Missing permissions to create quest channel in {guild.name}")
-                    continue
+                    print(f"Missing permissions to send messages in {quest_channel.name}")
 
-            # Clear old quest messages
-            try:
-                async for message in quest_channel.history(limit=100):
-                    if message.author == bot.user:
-                        await message.delete()
-                        print(f"Deleted old quest message in {guild.name}")
-            except discord.Forbidden:
-                print(f"Missing permissions to delete messages in {quest_channel.name}")
-
-            # Generate new quests
-            from data.quests import generate_daily_quests
-            quests = generate_daily_quests()
-            embed = discord.Embed(title="Daily Quests", description="Complete these quests to earn Mastery XP! Quests reset daily at midnight UTC.", color=discord.Color.orange())
-            for quest_type, quest in quests.items():
-                embed.add_field(name=quest_type, value=quest["description"], inline=False)
-            await quest_channel.send(embed=embed)
-            print(f"Posted daily quests in {guild.name}")
